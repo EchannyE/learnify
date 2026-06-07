@@ -1,0 +1,327 @@
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import api from "../api/axios";
+import OcrSuccessModal from "../components/OcrSuccessModal";
+import LoadingButton from "../components/LoadingButton";
+import useOcrActions from "../hooks/useOcrActions";
+import useOnlineStatus from "../hooks/useOnlineStatus";
+import {
+  getOfflineItems,
+  saveOfflineItem,
+  saveOfflineItems
+} from "../utils/offlineDb";
+import {
+  downloadPdf,
+  downloadDocx,
+  formatNoteForDownload
+} from "../utils/downloadFile";
+
+export default function Notes() {
+  const { handleOcrAction } = useOcrActions();
+  const isOnline = useOnlineStatus();
+  const navigate = useNavigate();
+  const token = localStorage.getItem("learnify_token");
+
+  const [form, setForm] = useState({
+    title: "",
+    subject: "",
+    topic: "",
+    imageUrl: ""
+  });
+
+  const [pastedText, setPastedText] = useState("");
+  const [file, setFile] = useState(null);
+  const [fileError, setFileError] = useState("");
+
+  const [notes, setNotes] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [ocrModalOpen, setOcrModalOpen] = useState(false);
+  const [savedNote, setSavedNote] = useState(null);
+
+  const fetchNotes = async () => {
+    try {
+      if (!isOnline) {
+        const offlineNotes = await getOfflineItems("notes");
+        setNotes(offlineNotes);
+        return;
+      }
+
+      if (!token) {
+        setNotes([]);
+        return;
+      }
+
+      const res = await api.get("/notes");
+      const serverNotes = res.data.data || [];
+
+      setNotes(serverNotes);
+      await saveOfflineItems("notes", serverNotes);
+    } catch {
+      const offlineNotes = await getOfflineItems("notes");
+      setNotes(offlineNotes);
+    }
+  };
+
+  useEffect(() => {
+    if (!token) return navigate("/login");
+    fetchNotes();
+  }, [isOnline, token, navigate]);
+
+  const submitNote = async (event) => {
+    event.preventDefault();
+
+    if (!isOnline) return alert("Offline mode: cannot upload.");
+    if (!token) return alert("Login required.");
+
+    if (!form.imageUrl && !file && !pastedText) {
+      return alert("Provide file, image URL, or text.");
+    }
+
+    if (fileError) return alert(fileError);
+
+    try {
+      setLoading(true);
+
+      let res;
+
+      if (file) {
+        const formData = new FormData();
+        formData.append("title", form.title);
+        formData.append("subject", form.subject);
+        formData.append("topic", form.topic);
+        if (form.imageUrl) formData.append("imageUrl", form.imageUrl);
+        if (pastedText) formData.append("extractedText", pastedText);
+        formData.append("noteFile", file);
+
+        res = await api.post("/notes", formData);
+      } else {
+        res = await api.post("/notes", {
+          ...form,
+          extractedText: pastedText
+        });
+      }
+
+      const note = res.data.data;
+
+      setSavedNote(note);
+      await saveOfflineItem("notes", note);
+      setOcrModalOpen(true);
+
+      await fetchNotes();
+
+      setForm({ title: "", subject: "", topic: "", imageUrl: "" });
+      setPastedText("");
+      setFile(null);
+      setFileError("");
+    } catch {
+      alert("Upload failed.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const downloadNotePdf = (note) =>
+    downloadPdf({
+      filename: note.title || "note",
+      title: "LEARNIFY NOTE",
+      content: formatNoteForDownload(note),
+      meta: {
+        subject: note.subject,
+        topic: note.topic,
+        extra: `Status: ${note.status || "N/A"}`
+      }
+    });
+
+  const downloadNoteDocx = (note) =>
+    downloadDocx({
+      filename: note.title || "note",
+      title: "LEARNIFY NOTE",
+      content: formatNoteForDownload(note),
+      meta: {
+        subject: note.subject,
+        topic: note.topic
+      }
+    });
+
+  const inputClass =
+    "w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm outline-none transition focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100";
+
+  return (
+    <main className="mx-auto max-w-5xl px-6 py-10 space-y-8">
+
+      {/* HEADER */}
+      <div>
+        <h1 className="text-3xl font-bold text-slate-900">
+          OCR Note Scanner
+        </h1>
+        <p className="mt-2 text-slate-600 max-w-2xl">
+          Upload documents or paste text. Convert notes into structured learning content with AI tools.
+        </p>
+
+        {!isOnline && (
+          <div className="mt-4 rounded-xl bg-yellow-50 p-3 text-sm text-yellow-800">
+            Offline mode enabled — viewing cached notes only.
+          </div>
+        )}
+      </div>
+
+      {/* FORM CARD */}
+      <section className="rounded-2xl border bg-white p-6 shadow-sm">
+        <form onSubmit={submitNote} className="space-y-5">
+
+          <div className="grid gap-4 md:grid-cols-3">
+            <input
+              className={inputClass}
+              placeholder="Title"
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+              disabled={!isOnline}
+            />
+            <input
+              className={inputClass}
+              placeholder="Subject"
+              value={form.subject}
+              onChange={(e) => setForm({ ...form, subject: e.target.value })}
+              disabled={!isOnline}
+            />
+            <input
+              className={inputClass}
+              placeholder="Topic"
+              value={form.topic}
+              onChange={(e) => setForm({ ...form, topic: e.target.value })}
+              disabled={!isOnline}
+            />
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+
+            <div>
+              <label className="text-sm font-medium text-slate-600">
+                Upload file
+              </label>
+              <input
+                type="file"
+                accept=".pdf,.doc,.docx"
+                className={inputClass}
+                onChange={(e) => {
+                  const selected = e.target.files?.[0];
+                  if (!selected) return setFile(null);
+
+                  const ext = selected.name.split(".").pop().toLowerCase();
+                  if (!["pdf", "doc", "docx"].includes(ext)) {
+                    setFileError("Only PDF/DOC/DOCX allowed");
+                    setFile(null);
+                    return;
+                  }
+
+                  setFile(selected);
+                  setFileError("");
+                }}
+                disabled={!isOnline}
+              />
+
+              {fileError && (
+                <p className="text-sm text-red-600 mt-1">{fileError}</p>
+              )}
+            </div>
+
+            <input
+              className={inputClass}
+              placeholder="Image URL (optional)"
+              value={form.imageUrl}
+              onChange={(e) =>
+                setForm({ ...form, imageUrl: e.target.value })
+              }
+              disabled={!isOnline}
+            />
+          </div>
+
+          <textarea
+            rows={5}
+            className={inputClass}
+            placeholder="Paste text here (optional)"
+            value={pastedText}
+            onChange={(e) => setPastedText(e.target.value)}
+            disabled={!isOnline}
+          />
+
+          <LoadingButton
+            loading={loading}
+            loadingText="Processing..."
+            className="w-full rounded-xl bg-blue-600 py-3 text-white font-semibold hover:bg-blue-700"
+          >
+            Create Note
+          </LoadingButton>
+        </form>
+      </section>
+
+      {/* NOTES LIST */}
+      <section className="space-y-4">
+        <h2 className="text-xl font-semibold text-slate-900">
+          Saved Notes
+        </h2>
+
+        {notes.length === 0 ? (
+          <div className="rounded-xl bg-white p-6 text-center text-slate-500 shadow-sm">
+            No notes available yet.
+          </div>
+        ) : (
+          notes.map((note) => (
+            <div
+              key={note._id}
+              className="rounded-2xl border bg-white p-5 shadow-sm"
+            >
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+
+                <div>
+                  <h3 className="font-semibold text-slate-900">
+                    {note.title}
+                  </h3>
+
+                  <p className="text-sm text-slate-600">
+                    {note.subject} • {note.topic}
+                  </p>
+
+                  <p className="text-xs text-slate-500 mt-1">
+                    Status: {note.status || "N/A"}
+                  </p>
+                </div>
+
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    onClick={() => downloadNotePdf(note)}
+                    className="rounded-xl bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+                  >
+                    PDF
+                  </button>
+
+                  <button
+                    onClick={() => downloadNoteDocx(note)}
+                    className="rounded-xl bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700"
+                  >
+                    DOCX
+                  </button>
+                </div>
+              </div>
+
+              {note.extractedText && (
+                <p className="mt-3 text-sm text-slate-700 line-clamp-2">
+                  {note.extractedText}
+                </p>
+              )}
+            </div>
+          ))
+        )}
+      </section>
+
+      {/* MODAL */}
+      <OcrSuccessModal
+        open={ocrModalOpen}
+        onClose={() => setOcrModalOpen(false)}
+        onSelect={(action) =>
+          handleOcrAction({ action, noteId: savedNote?._id })
+        }
+      />
+    </main>
+  );
+}

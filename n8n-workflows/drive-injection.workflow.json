@@ -1,0 +1,302 @@
+{
+  "name": "Learnify \u2013 05 Google Drive RAG Ingest",
+  "nodes": [
+    {
+      "id": "2a8158d9-cf2c-4fe4-bc2c-dccdc4a73e13",
+      "name": "Pipeline Info",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        240,
+        -20
+      ],
+      "parameters": {
+        "content": "## \ud83d\udcc1 Google Drive RAG Ingest Pipeline\n\n**Trigger:** Fires when a new PDF is added to the watched Drive folder.\n\n**File naming convention (important):**\n`WAEC_Mathematics_Algebra.pdf`\n\u2192 curriculumType=WAEC, subject=Mathematics, topic=Algebra\n\n**What it does:**\nDownloads PDF \u2192 extracts text \u2192 chunks (900 chars / 150 overlap)\n\u2192 embeds each chunk via Gemini \u2192 saves to backend /api/rag/chunks\n\n**Env vars needed:**\n- `GOOGLE_PALM_API` credential\n- Google Drive credential\n- `backendUrl` in Set Config node\n- Set the Drive folder ID in `Google Drive Trigger` node",
+        "height": 280,
+        "width": 460,
+        "color": 3
+      }
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "PASTE_GOOGLE_DRIVE_FOLDER_ID_HERE",
+          "mode": "id"
+        },
+        "event": "fileCreated",
+        "options": {}
+      },
+      "id": "3a4dcb94-65b0-4273-a2f6-4e0ec7bb26c2",
+      "name": "Google Drive Trigger - New Curriculum File",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        260,
+        300
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "85926c5f-2607-43bd-b883-28dcdcf45907",
+              "name": "backendUrl",
+              "value": "https://your-backend-url.com",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6e110276-3cf9-4595-84f4-3fec98e76c64",
+      "name": "Set Config - Drive RAG Ingest",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        510,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": "={{ $('Google Drive Trigger - New Curriculum File').item.json.id }}",
+        "options": {}
+      },
+      "id": "cbd80599-175c-486f-9e6d-6a93a2b0ab62",
+      "name": "Google Drive - Download Curriculum File",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "data",
+        "options": {}
+      },
+      "id": "a975abea-eba6-44fa-a2bb-d9957cdb40b7",
+      "name": "Extract From File - PDF Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        1010,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const driveFile = $('Google Drive Trigger - New Curriculum File').item.json;\nconst extracted = $input.first().json;\nconst text = extracted.text || extracted.data || extracted.content || '';\n\nconst fileName = driveFile.name || 'Curriculum File';\nconst cleanName = fileName.replace(/\\.[^.]+$/, '');\n\n// Recommended file naming: WAEC_Mathematics_Algebra.pdf\nconst parts = cleanName.split(/[_-]/).map((p) => p.trim()).filter(Boolean);\n\nreturn [{\n  json: {\n    curriculumType: parts[0] || 'WAEC',\n    subject: parts[1] || 'General',\n    topic: parts.slice(2).join(' ') || cleanName,\n    level: '',\n    sourceName: fileName,\n    sourceFileId: driveFile.id,\n    sourceMimeType: driveFile.mimeType,\n    sourceText: text\n  }\n}];"
+      },
+      "id": "5f5616aa-dd0f-4c9c-8ac8-c253caba45dc",
+      "name": "Code - Extract Curriculum Metadata",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json;\nif (!body.sourceText) throw new Error('No text extracted from the Google Drive file. For now, upload PDF files or adjust Extract From File operation for DOCX/TXT.');\n\nconst text = String(body.sourceText)\n  .replace(/\\r/g, '')\n  .replace(/\\n{3,}/g, '\\n\\n')\n  .replace(/[ \\t]{2,}/g, ' ')\n  .trim();\n\nconst chunkSize = 900;\nconst overlap = 150;\nconst chunks = [];\nlet start = 0;\nlet index = 0;\n\nwhile (start < text.length) {\n  const end = Math.min(start + chunkSize, text.length);\n  const chunkText = text.slice(start, end).trim();\n\n  if (chunkText.length > 50) {\n    chunks.push({\n      json: {\n        curriculumType: body.curriculumType,\n        subject: body.subject,\n        topic: body.topic,\n        level: body.level,\n        sourceName: body.sourceName,\n        sourceFileId: body.sourceFileId,\n        sourceMimeType: body.sourceMimeType,\n        chunkIndex: index,\n        chunkText\n      }\n    });\n    index++;\n  }\n\n  start += chunkSize - overlap;\n}\n\nreturn chunks;"
+      },
+      "id": "b6edba08-4392-41fc-8cf7-70e756ada3f9",
+      "name": "Code - Split Curriculum Chunks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1510,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'models/text-embedding-004', content: { parts: [{ text: $json.chunkText }] } }) }}",
+        "options": {}
+      },
+      "id": "2415d987-1eb7-457f-9a1d-c42037c3f4d9",
+      "name": "Gemini Credential - Embed Curriculum Chunk",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        300
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const source = $('Code - Split Curriculum Chunks').item.json;\nconst embedding = $input.first().json.embedding?.values || [];\nif (!embedding.length) throw new Error('No embedding returned from Gemini.');\nreturn [{ json: { ...source, embedding } }];"
+      },
+      "id": "06fa6bf1-f53f-4b61-8454-43ff32472fee",
+      "name": "Code - Prepare RAG Chunk",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2010,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Config - Drive RAG Ingest').item.json.backendUrl + '/api/rag/chunks' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "6b298660-8b6a-4e21-93f6-72e32a80a5ef",
+      "name": "Backend - Save RAG Chunk",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2260,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Google Drive Trigger - New Curriculum File": {
+      "main": [
+        [
+          {
+            "node": "Set Config - Drive RAG Ingest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config - Drive RAG Ingest": {
+      "main": [
+        [
+          {
+            "node": "Google Drive - Download Curriculum File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Drive - Download Curriculum File": {
+      "main": [
+        [
+          {
+            "node": "Extract From File - PDF Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract From File - PDF Text": {
+      "main": [
+        [
+          {
+            "node": "Code - Extract Curriculum Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Extract Curriculum Metadata": {
+      "main": [
+        [
+          {
+            "node": "Code - Split Curriculum Chunks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Split Curriculum Chunks": {
+      "main": [
+        [
+          {
+            "node": "Gemini Credential - Embed Curriculum Chunk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Credential - Embed Curriculum Chunk": {
+      "main": [
+        [
+          {
+            "node": "Code - Prepare RAG Chunk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Prepare RAG Chunk": {
+      "main": [
+        [
+          {
+            "node": "Backend - Save RAG Chunk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "tags": [
+    {
+      "name": "learnify"
+    }f,
+    {
+      "name": "education"
+    }
+  ],
+  "meta": {
+    "instanceId": "learnify-05_learnify_drive_rag_ingest"
+  }
+}

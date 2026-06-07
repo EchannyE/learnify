@@ -1,0 +1,413 @@
+{
+  "name": "Learnify \u2013 01 OCR Pipeline",
+  "nodes": [
+    {
+      "id": "15553660-a7a2-4a52-af1a-1f679bad8db1",
+      "name": "Pipeline Info",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        240,
+        -40
+      ],
+      "parameters": {
+        "content": "## \ud83d\udcf7 OCR Pipeline \u2013 v2 (3 Input Modes)\n\n**Webhook:** `POST /webhook/learnify-ocr`\n\n**Mode 1 \u2013 Image URL:**\n```json\n{ \"inputType\": \"url\", \"imageUrl\": \"https://...\",\n  \"noteId\": \"...\", \"userId\": \"...\" }\n```\n\n**Mode 2 \u2013 Base64 Upload:**\n```json\n{ \"inputType\": \"upload\", \"imageBase64\": \"<base64>\",\n  \"mimeType\": \"image/jpeg\", \"noteId\": \"...\", \"userId\": \"...\" }\n```\n\n**Mode 3 \u2013 Paste Text (skip OCR):**\n```json\n{ \"inputType\": \"text\", \"extractedText\": \"...\",\n  \"noteId\": \"...\", \"userId\": \"...\" }\n```\n\n**Env vars:** `GOOGLE_PALM_API` credential \u00b7 `backendUrl` in Set Config",
+        "height": 380,
+        "width": 500,
+        "color": 4
+      }
+    },
+    {
+      "id": "51385dbc-73e6-491c-a57c-feae4c8b9e6a",
+      "name": "Webhook - OCR",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        260,
+        420
+      ],
+      "webhookId": "learnify-ocr",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "learnify-ocr",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "cb5b577e-d34b-42a8-ab51-c06965d95684",
+      "name": "Set Config - OCR",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        510,
+        420
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9fb0e1ce-67be-448c-8758-8665eac6b509",
+              "name": "backendUrl",
+              "value": "https://your-backend-url.com",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "323a9276-5941-44fd-8e5d-37e2305d28a1",
+      "name": "Switch - Input Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        760,
+        420
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "id": "c97d6547-8d0d-4e8c-93d5-7d5bbc6381a4",
+                    "leftValue": "={{ ($json.body || $json).inputType }}",
+                    "rightValue": "url",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "URL"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "id": "81e58fbf-c220-46a3-bf51-d008f56e2584",
+                    "leftValue": "={{ ($json.body || $json).inputType }}",
+                    "rightValue": "upload",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Upload"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "id": "6e6205b7-5100-4bd1-ae08-62f7e33a877f",
+                    "leftValue": "={{ ($json.body || $json).inputType }}",
+                    "rightValue": "text",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Text"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      }
+    },
+    {
+      "id": "e6d9b1ea-7ced-4ad2-bc6f-bcabb1c674ee",
+      "name": "HTTP Request - Download Image (OCR)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1010,
+        220
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ ($('Webhook - OCR').item.json.body || $('Webhook - OCR').item.json).imageUrl }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "imageData"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "f969d5a1-6cd1-4f96-b23b-33d7822119dc",
+      "name": "Gemini OCR - URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1260,
+        220
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini API"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [ { inline_data: { mime_type: $binary.imageData.mimeType || 'image/jpeg', data: $binary.imageData.data } }, { text: 'Extract all readable text from this educational note image. Preserve headings, mathematical formulas, diagram labels, bullet points and numbering. Return plain text only, no markdown.' } ] }] }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "bf3fc116-ba2e-41a6-853c-1d9474fb5c3a",
+      "name": "Gemini OCR - Upload",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1010,
+        420
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini API"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [ { inline_data: {   mime_type: ($('Webhook - OCR').item.json.body || $('Webhook - OCR').item.json).mimeType || 'image/jpeg',   data: (($('Webhook - OCR').item.json.body || $('Webhook - OCR').item.json).imageBase64 || '').replace(/^data:[^,]+,/, '') }}, { text: 'Extract all readable text from this educational note image. Preserve headings, mathematical formulas, diagram labels, bullet points and numbering. Return plain text only, no markdown.' } ] }] }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "cb8500fa-bccf-4db5-8df8-080ebd69aa49",
+      "name": "Code - Format Pasted Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1010,
+        620
+      ],
+      "parameters": {
+        "jsCode": "// Text path \u2013 student pasted raw text, no OCR needed\nconst body = $('Webhook - OCR').item.json.body || $('Webhook - OCR').item.json;\nreturn [{ json: {\n  noteId        : body.noteId,\n  userId        : body.userId,\n  rawText       : body.extractedText || '',\n  inputType     : 'text',\n  source        : 'paste'\n} }];"
+      }
+    },
+    {
+      "id": "59dc1471-e30f-40ad-96ab-d29d3dbc76ec",
+      "name": "Code - Clean OCR Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1510,
+        420
+      ],
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst body  = $('Webhook - OCR').item.json.body || $('Webhook - OCR').item.json;\n\n// \u2500\u2500 Detect which path delivered this item \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nlet rawText = '';\nlet source  = item.source || 'unknown';\n\nif (item.rawText !== undefined) {\n  // Text (paste) path \u2013 rawText already normalised\n  rawText = item.rawText;\n  source  = 'paste';\n} else if (item.candidates) {\n  // Gemini response (URL or Upload path)\n  rawText = item.candidates?.[0]?.content?.parts?.[0]?.text || '';\n  source  = item.source || 'gemini-ocr';\n}\n\n// \u2500\u2500 Clean \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst cleaned = rawText\n  .replace(/\\r\\n|\\r/g, '\\n')\n  .replace(/[ \\t]{2,}/g, ' ')\n  .replace(/\\n{3,}/g, '\\n\\n')\n  .replace(/- \\n/g, '')\n  .trim();\n\nreturn [{ json: {\n  noteId        : body.noteId || item.noteId,\n  userId        : body.userId || item.userId,\n  extractedText : cleaned,\n  wordCount     : cleaned.split(/\\s+/).filter(Boolean).length,\n  inputType     : body.inputType || item.inputType || 'unknown',\n  source\n} }];"
+      }
+    },
+    {
+      "id": "15fe1af3-5692-46f9-815f-b802192b70a8",
+      "name": "Backend - Save OCR Result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        420
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Config - OCR').item.json.backendUrl + '/api/notes/ocr-result' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "43e68b79-e7e7-4d57-8fc5-0aec6d3c9e3a",
+      "name": "Respond - OCR Complete",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2010,
+        420
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, message: 'OCR completed', data: $json } }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook - OCR": {
+      "main": [
+        [
+          {
+            "node": "Set Config - OCR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config - OCR": {
+      "main": [
+        [
+          {
+            "node": "Switch - Input Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch - Input Type": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request - Download Image (OCR)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gemini OCR - Upload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code - Format Pasted Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request - Download Image (OCR)": {
+      "main": [
+        [
+          {
+            "node": "Gemini OCR - URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini OCR - URL": {
+      "main": [
+        [
+          {
+            "node": "Code - Clean OCR Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini OCR - Upload": {
+      "main": [
+        [
+          {
+            "node": "Code - Clean OCR Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Format Pasted Text": {
+      "main": [
+        [
+          {
+            "node": "Code - Clean OCR Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Clean OCR Text": {
+      "main": [
+        [
+          {
+            "node": "Backend - Save OCR Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backend - Save OCR Result": {
+      "main": [
+        [
+          {
+            "node": "Respond - OCR Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "tags": [
+    {
+      "name": "learnify"
+    },
+    {
+      "name": "education"
+    }
+  ],
+  "meta": {
+    "instanceId": "learnify-01_learnify_ocr_pipeline"
+  }
+}

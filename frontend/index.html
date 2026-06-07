@@ -1,0 +1,47 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Theme -->
+    <meta name="theme-color" content="#2563EB" />
+
+    <!-- SEO -->
+    <meta name="description" content="Learnify - AI-powered learning platform for notes, quizzes, tutoring, and study planning." />
+
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Learnify" />
+
+    <!-- Favicon (add your own files later) -->
+
+    <title>Learnify</title>
+
+    <!-- Prevent theme flash (optimized) -->
+    <script>
+      (function () {
+        try {
+          const theme = localStorage.getItem("learnify_theme");
+
+          const prefersDark =
+            window.matchMedia &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches;
+
+          const isDark = theme === "dark" || (!theme && prefersDark);
+
+          document.documentElement.classList.toggle("dark", isDark);
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+

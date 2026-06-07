@@ -1,0 +1,16 @@
+﻿{
+    "name":  "Learnify",
+    "short_name":  "Learnify",
+    "description":  "AI-powered learning companion for students",
+    "start_url":  "/",
+    "scope":  "/",
+    "display":  "standalone",
+    "orientation":  "portrait-primary",
+    "background_color":  "#F8FAFC",
+    "theme_color":  "#2563EB",
+    "categories":  [
+                       "education",
+                       "productivity",
+                       "utilities"
+                   ]
+}

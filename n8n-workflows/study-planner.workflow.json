@@ -1,1 +1,314 @@
-{}
+{}{
+  "name": "Learnify \u2013 03 Study Planner",
+  "nodes": [
+    {
+      "id": "639244bb-4a2c-4fd4-b6d3-0b001aad3a90",
+      "name": "Pipeline Info",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        240,
+        -20
+      ],
+      "parameters": {
+        "content": "## \ud83d\udcc5 Study Planner Pipeline\n\n**Webhook:** `POST /webhook/learnify-study-planner`\n\n**Request body:**\n```json\n{ \"studentId\": \"...\", \"noteId\": \"...\", \"userId\": \"...\",\n  \"subject\": \"Physics\", \"topic\": \"Waves\",\n  \"examDate\": \"2026-11-01\", \"availableHoursPerDay\": 2,\n  \"extractedText\": \"...\" }\n```\n\n**RAG is automatically applied** \u2014 curriculum context fetched from backend.\n\n**Env vars needed:**\n- `GOOGLE_PALM_API` credential\n- `backendUrl` in Set Config node",
+        "height": 280,
+        "width": 460,
+        "color": 6
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "learnify-study-planner",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "64ff689b-6f62-495b-b41d-ea124032b95e",
+      "name": "Webhook - Study Planner",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        260,
+        300
+      ],
+      "webhookId": "learnify-study-planner"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "72f308ad-ea7d-45dd-be0f-5d7ace11571e",
+              "name": "backendUrl",
+              "value": "https://your-backend-url.com",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e7b4dfd4-8121-4d3a-9c83-5e751be44046",
+      "name": "Set Config - Study Planner",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        510,
+        300
+      ]
+    },
+    {
+      "id": "89f2fcfc-44a1-424f-a98c-cfc032aca5d4",
+      "name": "Gemini Embed - Planner RAG Query",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        760,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'models/text-embedding-004', content: { parts: [{ text: (($('Webhook - Study Planner').item.json.body || $('Webhook - Study Planner').item.json).subject || '') + ' ' + (($('Webhook - Study Planner').item.json.body || $('Webhook - Study Planner').item.json).topic || '') + ' exam preparation study plan' }] } }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "057700d9-12d4-4a9c-a7fb-bad7910f5a4d",
+      "name": "Search Curriculum Context (Planner)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1010,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Config - Study Planner').item.json.backendUrl + '/api/rag/search' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ embedding: $json.embedding?.values || [], limit: 5, subject: ($('Webhook - Study Planner').item.json.body || $('Webhook - Study Planner').item.json).subject, topic:   ($('Webhook - Study Planner').item.json.body || $('Webhook - Study Planner').item.json).topic, curriculumType: ($('Webhook - Study Planner').item.json.body || $('Webhook - Study Planner').item.json).curriculumType || 'WAEC' }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "8e943a9a-c6a4-40f6-ab29-08992b52fddb",
+      "name": "Code - Extract Planner RAG Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// \u2500\u2500 Pull original webhook body \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst webhookBody = $('Webhook - Study Planner').item.json.body\n                 || $('Webhook - Study Planner').item.json;\n\n// \u2500\u2500 Extract RAG chunks from backend search result \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst result = $input.first().json;\nconst chunks = result.data || result.matches || result.results || [];\n\nlet curriculumContext = '';\nif (Array.isArray(chunks) && chunks.length > 0) {\n  curriculumContext = chunks\n    .map((item, i) => `[${i + 1}] ${item.chunkText || item.text || item.content || ''}`)\n    .join('\\n\\n');\n} else {\n  curriculumContext = 'No matching curriculum context found in Google Drive.';\n}\n\n// \u2500\u2500 Return merged body \u2013 curriculumContext now populated \u2500\u2500\u2500\u2500\u2500\nreturn [{ json: { ...webhookBody, curriculumContext, ragChunksFound: chunks.length, ragInjected: true } }];"
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// body arrives with curriculumContext already injected by the RAG pipeline\nconst body = $input.item.json;\n\nconst prompt = `\nYou are Learnify Study Planner.\n\nCreate a practical, curriculum-aligned study plan for a student.\n\nSubject: ${body.subject}\nTopic: ${body.topic}\nExam Date: ${body.examDate}\nAvailable Hours Per Day: ${body.availableHoursPerDay}\n\nCurriculum Context (Retrieved from Google Drive RAG \u2013 prioritise this):\n${body.curriculumContext || 'No curriculum context available.'}\n\nScanned Note:\n${body.extractedText || 'No scanned note provided.'}\n\nReturn valid JSON only in this format:\n{\n  \"studentId\": \"${body.studentId}\",\n  \"noteId\": \"${body.noteId}\",\n  \"examDate\": \"${body.examDate}\",\n  \"availableHoursPerDay\": ${Number(body.availableHoursPerDay || 1)},\n  \"ragChunksUsed\": ${body.ragChunksFound || 0},\n  \"plan\": [\n    { \"day\": \"Day 1\", \"subject\": \"${body.subject}\", \"topic\": \"${body.topic}\", \"durationMinutes\": 30, \"task\": \"Study key concept and answer practice questions\" }\n  ]\n}\n\nRules:\n- Create 7 days of study tasks.\n- Prioritise topics and subtopics from the Curriculum Context.\n- Include revision days and timed practice sessions.\n- Align content with WAEC/NECO/JAMB exam requirements.\n- Do not include markdown.\n`;\nreturn [{ json: { ...body, prompt } }];"
+      },
+      "id": "e302aa76-2654-454a-8064-17ee65bb4065",
+      "name": "Code - Build Study Plan Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1510,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $json.prompt }] }] }) }}",
+        "options": {}
+      },
+      "id": "a3c86fda-614d-4c8f-8665-5c36d8955991",
+      "name": "Gemini Credential - Generate Study Plan",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        300
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nlet text = response.candidates?.[0]?.content?.parts?.[0]?.text || '{}';\ntext = text.replace(/```json/g, '').replace(/```/g, '').trim();\nlet parsed;\ntry { parsed = JSON.parse(text); } catch (error) { throw new Error('Gemini did not return valid study plan JSON: ' + text); }\nreturn [{ json: parsed }];"
+      },
+      "id": "23cf4fa4-3f8c-41b7-ae8e-d510da7c773e",
+      "name": "Code - Parse Study Plan JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2010,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Config - Study Planner').item.json.backendUrl + '/api/study-plans/generated' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "ed794bfe-a8c3-4a3f-bbaf-6f6452efd6e2",
+      "name": "Backend - Save Study Plan",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, message: 'Study plan generated and saved', data: $json } }}",
+        "options": {}
+      },
+      "id": "84df8611-faee-4eaa-a4bb-2a98db6a8860",
+      "name": "Respond - Study Planner Complete",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2510,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - Study Planner": {
+      "main": [
+        [
+          {
+            "node": "Set Config - Study Planner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config - Study Planner": {
+      "main": [
+        [
+          {
+            "node": "Gemini Embed - Planner RAG Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Build Study Plan Prompt": {
+      "main": [
+        [
+          {
+            "node": "Gemini Credential - Generate Study Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Credential - Generate Study Plan": {
+      "main": [
+        [
+          {
+            "node": "Code - Parse Study Plan JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Parse Study Plan JSON": {
+      "main": [
+        [
+          {
+            "node": "Backend - Save Study Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backend - Save Study Plan": {
+      "main": [
+        [
+          {
+            "node": "Respond - Study Planner Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Embed - Planner RAG Query": {
+      "main": [
+        [
+          {
+            "node": "Search Curriculum Context (Planner)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Curriculum Context (Planner)": {
+      "main": [
+        [
+          {
+            "node": "Code - Extract Planner RAG Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Extract Planner RAG Context": {
+      "main": [
+        [
+          {
+            "node": "Code - Build Study Plan Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "tags": [
+    {
+      "name": "learnify"
+    },
+    {
+      "name": "education"
+    }
+  ],
+  "meta": {
+    "instanceId": "learnify-03_learnify_study_planner"
+  }
+}

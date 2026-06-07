@@ -1,0 +1,315 @@
+{
+  "name": "Learnify \u2013 06 RAG Query / AI Tutor",
+  "nodes": [
+    {
+      "id": "d13e236c-fa47-4e33-97e9-3b2839b540bb",
+      "name": "Pipeline Info",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        240,
+        -20
+      ],
+      "parameters": {
+        "content": "## \ud83e\udd16 RAG Query / AI Tutor Pipeline\n\n**Webhook:** `POST /webhook/learnify-rag-query`\n\n**Request body:**\n```json\n{ \"question\": \"Explain photosynthesis\",\n  \"subject\": \"Biology\", \"topic\": \"Photosynthesis\",\n  \"curriculumType\": \"WAEC\",\n  \"mode\": \"tutor\" }\n```\n\n**mode options:** `tutor` | `quiz` | `planner`\n\n**Flow:** Embeds question \u2192 vector search \u2192 injects top-5 chunks\n\u2192 Gemini generates grounded answer.\n\n**Env vars needed:**\n- `GOOGLE_PALM_API` credential\n- `backendUrl` in Set Config node",
+        "height": 280,
+        "width": 460,
+        "color": 2
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "learnify-rag-query",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "551dda24-50f9-4442-a0bd-8334c1cb94a9",
+      "name": "Webhook - RAG Query",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        260,
+        300
+      ],
+      "webhookId": "learnify-rag-query"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c445d0c7-0be9-4c08-9446-504bb3a4bf28",
+              "name": "backendUrl",
+              "value": "https://your-backend-url.com",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "59a7762e-3d09-4b81-b84b-322fd55a74c5",
+      "name": "Set Config - RAG Query",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        510,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $('Webhook - RAG Query').item.json.body || $('Webhook - RAG Query').item.json;\nif (!body.question) throw new Error('Missing required field: question');\nreturn [{ json: { ...body, curriculumType: body.curriculumType || 'WAEC', mode: body.mode || 'tutor' } }];"
+      },
+      "id": "fd04b474-b58c-42da-a53d-2026f1469646",
+      "name": "Code - Validate RAG Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'models/text-embedding-004', content: { parts: [{ text: $json.question }] } }) }}",
+        "options": {}
+      },
+      "id": "ee87b2ad-f23c-4dd8-a8c4-a4ac615393a2",
+      "name": "Gemini Credential - Embed RAG Query",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1010,
+        300
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $('Code - Validate RAG Query').item.json;\nconst embedding = $input.first().json.embedding?.values || [];\nif (!embedding.length) throw new Error('No query embedding returned from Gemini.');\nreturn [{ json: { ...query, embedding, limit: 5 } }];"
+      },
+      "id": "63412a63-6633-4821-bc6a-789aa4329e49",
+      "name": "Code - Prepare RAG Search",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Config - RAG Query').item.json.backendUrl + '/api/rag/search' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "bad38548-b4ad-4151-82c9-e9e56bfa2560",
+      "name": "Backend - Search RAG Context",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1510,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $('Code - Validate RAG Query').item.json;\nconst result = $input.first().json;\nconst chunks = result.data || result.matches || [];\nconst context = Array.isArray(chunks) ? chunks.map((item, index) => `SOURCE ${index + 1}:\\n${item.chunkText || item.text || item.content || ''}`).join('\\n\\n') : '';\nlet task = 'Answer like a patient AI tutor with simple explanation, example and one practice question.';\nif (query.mode === 'quiz') task = 'Generate quiz questions based only on the retrieved curriculum context.';\nif (query.mode === 'planner') task = 'Create a study plan based only on the retrieved curriculum context.';\nconst prompt = `\nYou are Learnify, a curriculum-aware educational AI.\n\nCurriculum: ${query.curriculumType}\nSubject: ${query.subject || ''}\nTopic: ${query.topic || ''}\nMode: ${query.mode}\n\nRetrieved Curriculum Context:\n${context || 'No curriculum context found.'}\n\nStudent Request:\n${query.question}\n\nTask:\n${task}\n\nRules:\n- Use retrieved context as primary source.\n- If context is insufficient, say what is missing.\n- Keep response student-friendly.\n`;\nreturn [{ json: { prompt, context } }];"
+      },
+      "id": "a281ed38-4d39-4e86-8ac6-2e364f2cd1e7",
+      "name": "Code - Build RAG Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $json.prompt }] }] }) }}",
+        "options": {}
+      },
+      "id": "0d4e2088-24dd-424a-b2fe-f5e6b47770cf",
+      "name": "Gemini Credential - RAG Answer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2010,
+        300
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const answer = $input.first().json.candidates?.[0]?.content?.parts?.[0]?.text || 'No answer generated.';\nreturn [{ json: { success: true, answer } }];"
+      },
+      "id": "ce3671b6-bb61-4762-99dc-d5ba6c5b8947",
+      "name": "Code - Format RAG Answer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "0d3ce9e2-3e79-486f-b293-c8d74d740848",
+      "name": "Respond - RAG Query Complete",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2510,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - RAG Query": {
+      "main": [
+        [
+          {
+            "node": "Set Config - RAG Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config - RAG Query": {
+      "main": [
+        [
+          {
+            "node": "Code - Validate RAG Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Validate RAG Query": {
+      "main": [
+        [
+          {
+            "node": "Gemini Credential - Embed RAG Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Credential - Embed RAG Query": {
+      "main": [
+        [
+          {
+            "node": "Code - Prepare RAG Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Prepare RAG Search": {
+      "main": [
+        [
+          {
+            "node": "Backend - Search RAG Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backend - Search RAG Context": {
+      "main": [
+        [
+          {
+            "node": "Code - Build RAG Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Build RAG Prompt": {
+      "main": [
+        [
+          {
+            "node": "Gemini Credential - RAG Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Credential - RAG Answer": {
+      "main": [
+        [
+          {
+            "node": "Code - Format RAG Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Format RAG Answer": {
+      "main": [
+        [
+          {
+            "node": "Respond - RAG Query Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "tags": [
+    {
+      "name": "learnify"
+    },
+    {
+      "name": "education"
+    }
+  ],
+  "meta": {
+    "instanceId": "learnify-06_learnify_rag_ai_tutor"
+  }
+}

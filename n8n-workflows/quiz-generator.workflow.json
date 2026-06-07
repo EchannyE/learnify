@@ -1,0 +1,314 @@
+{
+  "name": "Learnify \u2013 02 Quiz Generator",
+  "nodes": [
+    {
+      "id": "3c155f92-6f04-41df-a7a1-9e04c074f3c6",
+      "name": "Pipeline Info",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        240,
+        -20
+      ],
+      "parameters": {
+        "content": "## \ud83d\udcdd Quiz Generator Pipeline\n\n**Webhook:** `POST /webhook/learnify-quiz`\n\n**Request body:**\n```json\n{ \"studentId\": \"...\", \"noteId\": \"...\", \"userId\": \"...\",\n  \"subject\": \"Mathematics\", \"topic\": \"Algebra\",\n  \"extractedText\": \"...\", \"questionType\": \"mcq\" }\n```\n\n**RAG is automatically applied** \u2014 no need to pass curriculumContext.\n\n**Env vars needed:**\n- `GOOGLE_PALM_API` credential\n- `backendUrl` in Set Config node",
+        "height": 280,
+        "width": 460,
+        "color": 5
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "learnify-quiz",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "f7a40733-27c4-41ee-b9f5-098d0fd0696f",
+      "name": "Webhook - Quiz Generator",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        260,
+        300
+      ],
+      "webhookId": "learnify-quiz"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f11a79cc-ca41-42ce-ba51-47a08040d580",
+              "name": "backendUrl",
+              "value": "https://your-backend-url.com",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "98450f47-5920-4ca4-a17b-60aac3c20bc5",
+      "name": "Set Config - Quiz",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        510,
+        300
+      ]
+    },
+    {
+      "id": "cfed5dc4-d66e-485c-8610-83957b04b106",
+      "name": "Gemini Embed - Quiz RAG Query",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        760,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'models/text-embedding-004', content: { parts: [{ text: (($('Webhook - Quiz Generator').item.json.body || $('Webhook - Quiz Generator').item.json).subject || '') + ' ' + (($('Webhook - Quiz Generator').item.json.body || $('Webhook - Quiz Generator').item.json).topic || '') + ' ' + (($('Webhook - Quiz Generator').item.json.body || $('Webhook - Quiz Generator').item.json).extractedText || '').substring(0, 300) }] } }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "4d8943fb-60ab-48e9-b5ab-d79209536c47",
+      "name": "Search Curriculum Context (Quiz)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1010,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Config - Quiz').item.json.backendUrl + '/api/rag/search' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ embedding: $json.embedding?.values || [], limit: 5, subject: ($('Webhook - Quiz Generator').item.json.body || $('Webhook - Quiz Generator').item.json).subject, topic:   ($('Webhook - Quiz Generator').item.json.body || $('Webhook - Quiz Generator').item.json).topic, curriculumType: ($('Webhook - Quiz Generator').item.json.body || $('Webhook - Quiz Generator').item.json).curriculumType || 'WAEC' }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "67a65643-a7b8-4bbc-bfed-f2b402a0d722",
+      "name": "Code - Extract Quiz RAG Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// \u2500\u2500 Pull original webhook body \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst webhookBody = $('Webhook - Quiz Generator').item.json.body\n                 || $('Webhook - Quiz Generator').item.json;\n\n// \u2500\u2500 Extract RAG chunks from backend search result \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst result = $input.first().json;\nconst chunks = result.data || result.matches || result.results || [];\n\nlet curriculumContext = '';\nif (Array.isArray(chunks) && chunks.length > 0) {\n  curriculumContext = chunks\n    .map((item, i) => `[${i + 1}] ${item.chunkText || item.text || item.content || ''}`)\n    .join('\\n\\n');\n} else {\n  curriculumContext = 'No matching curriculum context found in Google Drive.';\n}\n\n// \u2500\u2500 Return merged body \u2013 curriculumContext now populated \u2500\u2500\u2500\u2500\u2500\nreturn [{ json: { ...webhookBody, curriculumContext, ragChunksFound: chunks.length, ragInjected: true } }];"
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// body arrives with curriculumContext already injected by the RAG pipeline\nconst body = $input.item.json;\nconst questionType = body.questionType || 'mcq';\nconst typeInstruction = questionType === 'closed_ended'\n  ? 'Generate close-ended questions with direct short answers.'\n  : 'Generate multiple choice questions with four options each.';\n\nconst prompt = `\nYou are Learnify Quiz Generator.\n\nSubject: ${body.subject}\nTopic: ${body.topic}\nQuestion Type: ${questionType}\n\nCurriculum Context (Retrieved from Google Drive RAG \u2013 use as primary source):\n${body.curriculumContext || 'No curriculum context available.'}\n\nScanned Note:\n${body.extractedText || 'No scanned note provided.'}\n\nTask:\n${typeInstruction}\n\nReturn valid JSON only in this format:\n{\n  \"studentId\": \"${body.studentId}\",\n  \"noteId\": \"${body.noteId}\",\n  \"subject\": \"${body.subject}\",\n  \"topic\": \"${body.topic}\",\n  \"questionType\": \"${questionType}\",\n  \"ragChunksUsed\": ${body.ragChunksFound || 0},\n  \"questions\": [\n    { \"question\": \"\", \"options\": [], \"correctAnswer\": \"\", \"explanation\": \"\", \"type\": \"${questionType}\" }\n  ]\n}\n\nRules:\n- Generate 10 questions.\n- Prioritise content found in the Curriculum Context.\n- Align difficulty with WAEC/NECO/JAMB syllabus level.\n- Do not include markdown.\n`;\nreturn [{ json: { ...body, prompt } }];"
+      },
+      "id": "969e6374-52fb-4e60-b52b-f7575ab0846a",
+      "name": "Code - Build Quiz Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1510,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $json.prompt }] }] }) }}",
+        "options": {}
+      },
+      "id": "5b7a19b8-b66b-424a-b2d4-b08654ec21d7",
+      "name": "Gemini Credential - Generate Quiz",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        300
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nlet text = response.candidates?.[0]?.content?.parts?.[0]?.text || '{}';\ntext = text.replace(/```json/g, '').replace(/```/g, '').trim();\nlet parsed;\ntry { parsed = JSON.parse(text); } catch (error) { throw new Error('Gemini did not return valid quiz JSON: ' + text); }\nreturn [{ json: parsed }];"
+      },
+      "id": "4fa47db8-65d1-4ea0-8cc3-38115d8f176b",
+      "name": "Code - Parse Quiz JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2010,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Config - Quiz').item.json.backendUrl + '/api/quizzes/generated' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "b2430848-96c2-4a26-9975-1afad2d26a8e",
+      "name": "Backend - Save Quiz",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, message: 'Quiz generated and saved', data: $json } }}",
+        "options": {}
+      },
+      "id": "21c55d04-b6c7-4532-84f3-12d7647497e7",
+      "name": "Respond - Quiz Complete",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2510,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - Quiz Generator": {
+      "main": [
+        [
+          {
+            "node": "Set Config - Quiz",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config - Quiz": {
+      "main": [
+        [
+          {
+            "node": "Gemini Embed - Quiz RAG Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Build Quiz Prompt": {
+      "main": [
+        [
+          {
+            "node": "Gemini Credential - Generate Quiz",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Credential - Generate Quiz": {
+      "main": [
+        [
+          {
+            "node": "Code - Parse Quiz JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Parse Quiz JSON": {
+      "main": [
+        [
+          {
+            "node": "Backend - Save Quiz",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backend - Save Quiz": {
+      "main": [
+        [
+          {
+            "node": "Respond - Quiz Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Embed - Quiz RAG Query": {
+      "main": [
+        [
+          {
+            "node": "Search Curriculum Context (Quiz)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Curriculum Context (Quiz)": {
+      "main": [
+        [
+          {
+            "node": "Code - Extract Quiz RAG Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Extract Quiz RAG Context": {
+      "main": [
+        [
+          {
+            "node": "Code - Build Quiz Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "tags": [
+    {
+      "name": "learnify"
+    },
+    {
+      "name": "education"
+    }
+  ],
+  "meta": {
+    "instanceId": "learnify-02_learnify_quiz_generator"
+  }
+}
