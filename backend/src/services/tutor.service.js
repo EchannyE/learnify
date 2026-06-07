@@ -1,6 +1,6 @@
 import axios from "axios";
 import Note from "../models/Note.js";
-import RagChunk from "../models/RagChunk.js";
+import ragChunk from "../models/ragChunk.js";
 
 export const askTutor = async ({ studentId, noteId, question, curriculum, subject, topic }) => {
   const note = noteId ? await Note.findOne({ _id: noteId, student: studentId }) : null;
@@ -12,7 +12,7 @@ export const askTutor = async ({ studentId, noteId, question, curriculum, subjec
   // Search RAG chunks for relevant curriculum resources
   let ragContext = "";
   try {
-    const ragChunks = await RagChunk.find({
+    const ragChunks = await ragChunk.find({
       subject: new RegExp(subject, "i"),
       ...(topic && { topic: new RegExp(topic, "i") })
     })
