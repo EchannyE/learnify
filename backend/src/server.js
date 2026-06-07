@@ -27,6 +27,13 @@ app.use(morgan("dev"));
 app.use(express.json({ limit: "10mb" }));
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
+app.use(cors({
+  origin: [
+    "http://localhost:5173",
+    "https://your-vercel-app.vercel.app"
+  ],
+  credentials: true
+}));
 app.get("/", (req, res) => {
   res.json({
     success: true,
