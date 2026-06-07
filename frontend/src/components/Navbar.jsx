@@ -17,13 +17,17 @@ export default function Navbar({ theme, toggleTheme, logout }) {
 
         {/* LOGO */}
         <Link to="/" className="flex items-center gap-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-600 text-white">
-            <BookOpenCheck size={22} />
-          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-600 text-white">
+              <BookOpenCheck size={22} />
+            </div>
 
-          <span className="text-xl font-bold text-slate-900 dark:text-white">
+         <span className="text-xl font-bold text-slate-900 dark:text-white">
             Learnify
           </span>
+
+      <img src="/icons/app-icon.png" alt="logo icon" className="h-6 w-6" />
+        </div>
         </Link>
 
         {/* DESKTOP NAV */}
