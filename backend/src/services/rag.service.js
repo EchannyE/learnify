@@ -1,11 +1,11 @@
-import RagChunk from "../models/RagChunk.js";
+import ragChunk from "../models/ragChunk.js";
 
 export const saveRagChunk = async (data) => {
   if (!data.chunkText || !data.embedding?.length) {
     throw new Error("Chunk text and embedding are required");
   }
 
-  return RagChunk.create({
+  return ragChunk.create({
     curriculumType: data.curriculumType,
     subject: data.subject,
     topic: data.topic,
@@ -60,7 +60,7 @@ export const searchRagChunks = async ({
     query.topic = new RegExp(topic, "i");
   }
 
-  const chunks = await RagChunk.find(query).limit(300);
+  const chunks = await ragChunk.find(query).limit(300);
 
   const scoredChunks = chunks
     .map((chunk) => ({
@@ -81,7 +81,7 @@ export const searchRagChunks = async ({
 };
 
 export const getRagChunks = async () => {
-  return RagChunk.find()
+  return ragChunk.find()
     .select("-embedding")
     .sort({ createdAt: -1 })
     .limit(100);
