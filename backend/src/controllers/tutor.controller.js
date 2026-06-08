@@ -3,23 +3,35 @@ import { successResponse, errorResponse } from "../utils/apiResponse.js";
 
 export const tutorChat = async (req, res) => {
   try {
-     const result = await askTutor({
-  studentId: req.user._id,
-  noteId: req.body.noteId,
-  question: req.body.question,
-  curriculum: req.user.curriculum,
-  subject: req.body.subject,
-  topic: req.body.topic
-});
+    const { noteId, question, subject, topic } = req.body;
 
-successResponse(
-  res,
-  "Tutor response generated",
-  result
-);
+    // 1. VALIDATION (IMPORTANT)
+    if (!question || !subject) {
+      return errorResponse(res, "Question and subject are required", 400);
+    }
+
+    // 2. CALL SERVICE
+    const result = await askTutor({
+      studentId: req.user._id,
+      noteId,
+      question,
+      subject,
+      topic
+    });
+
+    return successResponse(
+      res,
+      "Tutor response generated",
+      result
+    );
 
   } catch (error) {
-    console.error("Error in tutorChat:", error);
-    errorResponse(res, "Failed to get tutor response");
+    console.error("❌ Tutor Controller Error:", error);
+
+    return errorResponse(
+      res,
+      error.message || "Failed to get tutor response",
+      500
+    );
   }
 };
