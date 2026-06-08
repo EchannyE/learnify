@@ -4,24 +4,34 @@ import {
   getNoteById,
   saveOcrResult
 } from "../services/note.service.js";
+
 import { successResponse, errorResponse } from "../utils/apiResponse.js";
 
+/* -----------------------------
+   CREATE NOTE
+------------------------------ */
 export const addNote = async (req, res) => {
   try {
-    const noteData = { ...req.body };
+    const note = await createNote(
+      req.user._id,
+      req.body,
+      req.file
+    );
 
-    if (req.file) {
-      noteData.documentUrl = `${req.protocol}://${req.get("host")}/uploads/notes/${req.file.filename}`;
-      noteData.originalFileName = req.file.originalname;
-    }
-
-    const note = await createNote(req.user._id, noteData);
-    successResponse(res, "Note uploaded. OCR processing started.", note, 201);
+    successResponse(
+      res,
+      "Note uploaded. OCR processing started.",
+      note,
+      201
+    );
   } catch (error) {
     errorResponse(res, error.message, 400);
   }
 };
 
+/* -----------------------------
+   GET ALL NOTES
+------------------------------ */
 export const getNotes = async (req, res) => {
   try {
     const notes = await getStudentNotes(req.user._id);
@@ -31,6 +41,9 @@ export const getNotes = async (req, res) => {
   }
 };
 
+/* -----------------------------
+   GET SINGLE NOTE
+------------------------------ */
 export const getSingleNote = async (req, res) => {
   try {
     const note = await getNoteById(req.params.id, req.user._id);
@@ -45,6 +58,9 @@ export const getSingleNote = async (req, res) => {
   }
 };
 
+/* -----------------------------
+   OCR CALLBACK
+------------------------------ */
 export const receiveOcrResult = async (req, res) => {
   try {
     const { noteId, extractedText } = req.body;

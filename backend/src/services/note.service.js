@@ -1,7 +1,7 @@
 import axios from "axios";
 import Note from "../models/Note.js";
 
-export const createNote = async (studentId, data) => {
+export const createNote = async (studentId, data, file) => {
   const noteData = {
     student: studentId,
     title: data.title,
@@ -9,35 +9,57 @@ export const createNote = async (studentId, data) => {
     topic: data.topic
   };
 
-  if (data.imageUrl) {
-    noteData.imageUrl = data.imageUrl;
+  /* -----------------------------
+     FILE HANDLING (PRODUCTION STYLE)
+  ------------------------------ */
+  if (file) {
+    const fileType = file.mimetype;
+
+    // Save ONLY file path (NOT base64)
+    if (fileType.startsWith("image/")) {
+      noteData.imageUrl = `/uploads/notes/${file.filename}`;
+    } else {
+      noteData.documentUrl = `/uploads/notes/${file.filename}`;
+      noteData.originalFileName = file.originalname;
+    }
   }
 
-  if (data.documentUrl) {
-    noteData.documentUrl = data.documentUrl;
-    noteData.originalFileName = data.originalFileName;
-  }
-
+  /* -----------------------------
+     TEXT NOTES (OCR RESULT)
+  ------------------------------ */
   if (data.extractedText) {
     noteData.extractedText = data.extractedText;
     noteData.status = "processed";
+  } else {
+    noteData.status = "pending";
   }
 
   const note = await Note.create(noteData);
 
-  if (!data.extractedText && process.env.N8N_OCR_WEBHOOK_URL) {
-    await axios.post(process.env.N8N_OCR_WEBHOOK_URL, {
-      noteId: note._id,
-      imageUrl: note.imageUrl,
-      documentUrl: note.documentUrl,
-      subject: note.subject,
-      topic: note.topic
-    });
+  /* -----------------------------
+     OCR TRIGGER (SAFE VERSION)
+  ------------------------------ */
+  const shouldTriggerOCR =
+    !data.extractedText &&
+    process.env.N8N_OCR_WEBHOOK_URL &&
+    (noteData.imageUrl || noteData.documentUrl);
+
+  if (shouldTriggerOCR) {
+    try {
+      await axios.post(process.env.N8N_OCR_WEBHOOK_URL, {
+        noteId: note._id,
+        imageUrl: note.imageUrl,
+        documentUrl: note.documentUrl,
+        subject: note.subject,
+        topic: note.topic
+      });
+    } catch (err) {
+      console.error("OCR webhook failed:", err.message);
+    }
   }
 
   return note;
 };
-
 export const getStudentNotes = async (studentId) => {
   return Note.find({ student: studentId }).sort({ createdAt: -1 });
 };
@@ -55,4 +77,4 @@ export const saveOcrResult = async (noteId, extractedText) => {
     },
     { new: true }
   );
-}
+};
