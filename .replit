@@ -52,9 +52,15 @@ waitForPort = 3001
 outputType = "console"
 
 [[ports]]
+localPort = 3001
+externalPort = 3001
+exposeLocalhost = true
+
+[[ports]]
 localPort = 5000
 externalPort = 80
 
-[[ports]]
-localPort = 3001
-externalPort = 3001
+[deployment]
+deploymentTarget = "autoscale"
+run = ["bash", "-c", "cd frontend/dist && npx serve -s . -l 5000 & cd backend && node src/server.js"]
+build = ["bash", "-c", "cd frontend && npm install && npm run build"]
