@@ -62,7 +62,8 @@ const allowedFileTypes = [
   // Images (for OCR)
   "image/jpeg",
   "image/jpg",
-  "image/png"
+  "image/png",
+  "image/webp"
 ];
 
 const fileFilter = (req, file, cb) => {

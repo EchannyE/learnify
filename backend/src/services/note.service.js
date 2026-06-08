@@ -4,7 +4,7 @@ import Note from "../models/Note.js";
 export const createNote = async (studentId, data, file) => {
   const noteData = {
     student: studentId,
-    title: data.title,
+    title: data.title?.trim() || (file ? file.originalname.replace(/\.[^.]+$/, "") : "Untitled Note"),
     subject: data.subject,
     topic: data.topic
   };
