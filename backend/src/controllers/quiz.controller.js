@@ -21,6 +21,9 @@ export const generateQuiz = async (req, res) => {
   }
 };
 
+
+
+
 export const receiveGeneratedQuiz = async (req, res) => {
   try {
     const quiz = await saveGeneratedQuiz(req.body);

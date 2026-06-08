@@ -14,46 +14,53 @@ export default function Tutor() {
   const [messages, setMessages] = useState([]);
 
   const askTutor = async (e) => {
-    e.preventDefault();
-    if (!question.trim()) return;
+  e.preventDefault();
 
-    const userMessage = {
+  if (!question.trim()) return;
+
+  const userQuestion = question;
+
+  setMessages((prev) => [
+    ...prev,
+    {
       role: "user",
-      text: question
+      text: userQuestion
+    }
+  ]);
+
+  setQuestion("");
+
+  try {
+    setLoading(true);
+
+    const res = await api.post("/tutor/ask", {
+      subject,
+      topic: topic || undefined,
+      question: userQuestion,
+      noteId
+    });
+
+    const data = res.data.data;
+
+    const aiMessage = {
+      role: "ai",
+      text: data.answer || data,
+      ragChunksFound: data.ragChunksFound || 0
     };
 
-    setMessages((prev) => [...prev, userMessage]);
-    setQuestion("");
-
-    try {
-      setLoading(true);
-
-      const res = await api.post("/tutor/ask", {
-        subject,
-        question,
-        topic: topic || undefined,
-        noteId
-      });
-
-      const aiMessage = {
+    setMessages((prev) => [...prev, aiMessage]);
+  } catch (error) {
+    setMessages((prev) => [
+      ...prev,
+      {
         role: "ai",
-        text: res.data.data
-      };
-
-      setMessages((prev) => [...prev, aiMessage]);
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "ai",
-          text: "Unable to get tutor response. Please try again."
-        }
-      ]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+        text: "Unable to get tutor response. Please try again."
+      }
+    ]);
+  } finally {
+    setLoading(false);
+  }
+};
   return (
     <main className="mx-auto max-w-4xl px-6 py-10 space-y-6">
 

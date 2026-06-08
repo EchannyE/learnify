@@ -104,10 +104,16 @@ export default function Notes() {
       const note = res.data.data;
 
       setSavedNote(note);
-      await saveOfflineItem("notes", note);
-      setOcrModalOpen(true);
 
-      await fetchNotes();
+await saveOfflineItem("notes", note);
+
+setOcrModalOpen(true);
+
+await fetchNotes();
+
+if (note.status !== "processed") {
+  pollNoteStatus(note._id);
+}
 
       setForm({ title: "", subject: "", topic: "", imageUrl: "" });
       setPastedText("");
@@ -119,6 +125,21 @@ export default function Notes() {
       setLoading(false);
     }
   };
+
+  const pollNoteStatus = async (noteId) => {
+  const interval = setInterval(async () => {
+    try {
+      const res = await api.get(`/notes/${noteId}`);
+
+      if (res.data.data.status === "processed") {
+        clearInterval(interval);
+        fetchNotes();
+      }
+    } catch (error) {
+      clearInterval(interval);
+    }
+  }, 5000);
+};
 
   const downloadNotePdf = (note) =>
     downloadPdf({
@@ -201,19 +222,32 @@ export default function Notes() {
               </label>
               <input
                 type="file"
-                accept=".pdf,.doc,.docx"
+                accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp"
                 className={inputClass}
                 onChange={(e) => {
                   const selected = e.target.files?.[0];
                   if (!selected) return setFile(null);
 
-                  const ext = selected.name.split(".").pop().toLowerCase();
-                  if (!["pdf", "doc", "docx"].includes(ext)) {
-                    setFileError("Only PDF/DOC/DOCX allowed");
-                    setFile(null);
-                    return;
-                  }
+                 const ext = selected.name.split(".").pop().toLowerCase();
 
+                      if (
+                         ![
+                            "pdf",
+                             "doc",
+                             "docx",
+                              "png",
+                              "jpg",
+                              "jpeg",
+                              "webp"
+                          ].includes(ext)
+                          ) {
+                            setFileError(
+                           "Only PDF, DOC, DOCX, PNG, JPG, JPEG and WEBP files are allowed"
+                          );
+                            setFile(null);
+                           return;
+                          }
+ 
                   setFile(selected);
                   setFileError("");
                 }}
@@ -282,9 +316,25 @@ export default function Notes() {
                     {note.subject} • {note.topic}
                   </p>
 
-                  <p className="text-xs text-slate-500 mt-1">
-                    Status: {note.status || "N/A"}
-                  </p>
+                 <div className="mt-2">
+  {note.status === "processed" && (
+    <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700">
+      OCR Processed
+    </span>
+  )}
+
+  {note.status === "processing" && (
+    <span className="rounded-full bg-yellow-100 px-3 py-1 text-xs font-medium text-yellow-700">
+      OCR Processing
+    </span>
+  )}
+
+  {!note.status && (
+    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+      Pending
+    </span>
+  )}
+</div>
                 </div>
 
                 <div className="flex gap-2 flex-wrap">
@@ -301,6 +351,32 @@ export default function Notes() {
                   >
                     DOCX
                   </button>
+                  <button
+  onClick={() =>
+    navigate(`/quiz?noteId=${note._id}`)
+  }
+  className="rounded-xl bg-purple-600 px-4 py-2 text-sm text-white hover:bg-purple-700"
+>
+  Quiz
+</button>
+
+<button
+  onClick={() =>
+    navigate(`/tutor?noteId=${note._id}`)
+  }
+  className="rounded-xl bg-green-600 px-4 py-2 text-sm text-white hover:bg-green-700"
+>
+  Tutor
+</button>
+
+<button
+  onClick={() =>
+    navigate(`/study-planner?noteId=${note._id}`)
+  }
+  className="rounded-xl bg-orange-600 px-4 py-2 text-sm text-white hover:bg-orange-700"
+>
+  Planner
+</button>
                 </div>
               </div>
 

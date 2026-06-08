@@ -40,27 +40,35 @@ export default function Quiz() {
   }, [isOnline]);
 
   const generateQuiz = async () => {
-    if (!isOnline) return alert("Offline mode: cannot generate quiz.");
-    if (!noteId) return alert("Scan a note first.");
+  if (!noteId) return alert("Scan a note first.");
 
-    try {
-      setLoading(true);
+  try {
+    setLoading(true);
 
-      await api.post("/quizzes/generate", {
-        noteId,
-        questionType
-      });
+    const payload = {
+      noteId,
+      questionType,
+      extractedText: "" // optional fallback
+    };
 
-      alert("Quiz generation started.");
-      await fetchQuizzes();
-    } catch (err) {
-      alert(err?.response?.data?.message || "Quiz generation failed.");
-    } finally {
-      setLoading(false);
-    }
-  };
+    console.log("Sending quiz payload:", payload);
 
-  const downloadQuizPdf = (quiz) => {
+    const res = await api.post("/quizzes/generate", payload);
+
+    console.log("Quiz response:", res.data);
+
+    alert("Quiz generation started.");
+    await fetchQuizzes();
+  } catch (err) {
+    console.log("FULL ERROR:", err.response?.data);
+
+    alert(err?.response?.data?.message || "Quiz generation failed.");
+  } finally {
+    setLoading(false);
+  }
+};
+
+const downloadQuizPdf = (quiz) => {
     downloadPdf({
       filename: `${quiz.subject || "quiz"}-${quiz.topic || "learnify"}`,
       title: "LEARNIFY QUIZ",

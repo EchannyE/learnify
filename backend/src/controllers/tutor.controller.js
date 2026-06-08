@@ -3,17 +3,23 @@ import { successResponse, errorResponse } from "../utils/apiResponse.js";
 
 export const tutorChat = async (req, res) => {
   try {
-    const answer = await askTutor({
-      studentId: req.user._id,
-      curriculum: req.user.curriculum,
-      subject: req.body.subject,
-      question: req.body.question,
-      noteId: req.body.noteId,
-      topic: req.body.topic
-    });
+     const result = await askTutor({
+  studentId: req.user._id,
+  noteId: req.body.noteId,
+  question: req.body.question,
+  curriculum: req.user.curriculum,
+  subject: req.body.subject,
+  topic: req.body.topic
+});
 
-    successResponse(res, "Tutor response generated", answer);
+successResponse(
+  res,
+  "Tutor response generated",
+  result
+);
+
   } catch (error) {
-    errorResponse(res, error.message, 500);
+    console.error("Error in tutorChat:", error);
+    errorResponse(res, "Failed to get tutor response");
   }
 };
