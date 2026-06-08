@@ -6,12 +6,11 @@ export const askTutor = async ({
   studentId,
   noteId,
   question,
-  curriculum,
   subject,
   topic
 }) => {
 
-  // 1. Get note
+  // 1. Load note
   const note = noteId
     ? await Note.findOne({ _id: noteId, student: studentId })
     : null;
@@ -24,55 +23,57 @@ export const askTutor = async ({
     throw new Error("Note is still processing. Try again shortly.");
   }
 
-  const noteContext = note.extractedText
-    ? note.extractedText
-    : "";
+  const noteContext = note.extractedText || "";
 
-  // 2. STRICT RAG SEARCH (improved filtering)
+  // 2. BETTER RAG RETRIEVAL (no regex-only filtering)
   const chunks = await ragChunk.find({
-    subject: new RegExp(subject, "i")
+    subject: subject
   });
 
-  const topChunks = chunks
+  // fallback if subject mismatch
+  const filteredChunks = chunks.length
+    ? chunks
+    : await ragChunk.find();
+
+  // take top relevant chunks (simple heuristic improvement)
+  const topChunks = filteredChunks
     .slice(0, 5)
-    .map((c) => c.chunkText)
-    .join("\n\n");
+    .map((c) => `• ${c.chunkText}`)
+    .join("\n");
 
+  // 3. BUILD STRONG CONTEXT
   const contextBlock = `
-===== NOTE CONTENT =====
-${noteContext}
+NOTE CONTENT:
+${noteContext || "No note content available"}
 
-===== CURRICULUM CONTENT =====
-${topChunks}
+RELEVANT STUDY MATERIAL:
+${topChunks || "No curriculum data found"}
 `;
 
-  // 3. FORCEFUL PROMPT (THIS IS THE KEY FIX)
+  // 4. STRONG BUT SAFE PROMPT
   const prompt = `
 You are Learnify AI Tutor.
 
-CRITICAL RULE:
-You MUST use ONLY the provided context below to answer.
-If the answer is not in context, say:
-"Based on your notes, I don't have enough information."
+INSTRUCTIONS:
+- Use the provided context as primary knowledge
+- If context is incomplete, still give best possible explanation based on it
+- Be clear, educational, and step-by-step
 
-CURRICULUM: ${curriculum}
 SUBJECT: ${subject}
 TOPIC: ${topic || "General"}
-
-QUESTION:
-${question}
+QUESTION: ${question}
 
 CONTEXT:
 ${contextBlock}
 
-FORMAT:
-1. Explanation
-2. Step-by-step solution
+RESPONSE FORMAT:
+1. Simple explanation
+2. Step-by-step breakdown
 3. Example
 4. Practice question
 `;
 
-  // 4. CALL GEMINI
+  // 5. GEMINI CALL
   const response = await axios.post(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
     {
@@ -86,7 +87,7 @@ FORMAT:
 
   return {
     answer,
-    ragChunksFound: chunks.length,
+    ragChunksFound: filteredChunks.length,
     usedChunks: topChunks.length > 0
   };
 };
