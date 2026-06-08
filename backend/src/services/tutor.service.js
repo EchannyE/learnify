@@ -1,5 +1,6 @@
-import axios from "axios";
 import Note from "../models/Note.js";
+import ragChunk from "../models/ragChunk.js";
+import axios from "axios";
 
 export const askTutor = async ({
   studentId,
@@ -9,142 +10,83 @@ export const askTutor = async ({
   subject,
   topic
 }) => {
-  // ─────────────────────────────
-  // NOTE CONTEXT
-  // ─────────────────────────────
+
+  // 1. Get note
   const note = noteId
-    ? await Note.findOne({
-        _id: noteId,
-        student: studentId
-      })
+    ? await Note.findOne({ _id: noteId, student: studentId })
     : null;
 
-  const noteContext = note?.extractedText
-    ? `
-Student Note Context:
-${note.extractedText}
-`
-    : "";
-
-  // ─────────────────────────────
-  // RAG SEARCH
-  // ─────────────────────────────
-  let ragContext = "";
-  let ragChunksFound = 0;
-
-  try {
-    const ragResponse = await axios.post(
-      `${process.env.BACKEND_URL}/api/rag/search`,
-      {
-        question,
-        curriculumType: curriculum,
-        subject,
-        topic,
-        limit: 5
-      }
-    );
-
-    const ragChunks =
-      ragResponse.data?.data ||
-      ragResponse.data?.matches ||
-      ragResponse.data?.results ||
-      [];
-
-    ragChunksFound = ragChunks.length;
-
-    if (ragChunks.length > 0) {
-      ragContext = `
-Retrieved Curriculum Context:
-
-${ragChunks
-  .map(
-    (chunk, index) => `
-SOURCE ${index + 1}
-Subject: ${chunk.subject || ""}
-Topic: ${chunk.topic || ""}
-Source: ${chunk.sourceName || ""}
-
-${chunk.chunkText || chunk.text || chunk.content || ""}
-`
-  )
-  .join("\n\n")}
-`;
-    }
-  } catch (error) {
-    console.error("RAG Search Error:", error.message);
+  if (!note) {
+    throw new Error("Note not found or not accessible");
   }
 
-  // ─────────────────────────────
-  // PROMPT
-  // ─────────────────────────────
+  if (note.status !== "processed") {
+    throw new Error("Note is still processing. Try again shortly.");
+  }
+
+  const noteContext = note.extractedText
+    ? note.extractedText
+    : "";
+
+  // 2. STRICT RAG SEARCH (improved filtering)
+  const chunks = await ragChunk.find({
+    subject: new RegExp(subject, "i")
+  });
+
+  const topChunks = chunks
+    .slice(0, 5)
+    .map((c) => c.chunkText)
+    .join("\n\n");
+
+  const contextBlock = `
+===== NOTE CONTENT =====
+${noteContext}
+
+===== CURRICULUM CONTENT =====
+${topChunks}
+`;
+
+  // 3. FORCEFUL PROMPT (THIS IS THE KEY FIX)
   const prompt = `
 You are Learnify AI Tutor.
 
-Curriculum:
-${curriculum}
+CRITICAL RULE:
+You MUST use ONLY the provided context below to answer.
+If the answer is not in context, say:
+"Based on your notes, I don't have enough information."
 
-Subject:
-${subject}
+CURRICULUM: ${curriculum}
+SUBJECT: ${subject}
+TOPIC: ${topic || "General"}
 
-Topic:
-${topic || "Not specified"}
-
-IMPORTANT RULES:
-
-1. Use the Retrieved Curriculum Context as your PRIMARY source.
-2. Use Student Note Context as a secondary source.
-3. If curriculum context exists, do not ignore it.
-4. If information is missing from the curriculum context, clearly state that.
-5. Explain concepts in a way suitable for WAEC, NECO, BECE, JAMB and GCE students.
-6. Use simple language.
-7. Include examples when appropriate.
-
-${ragContext}
-
-${noteContext}
-
-Student Question:
+QUESTION:
 ${question}
 
-Response Format:
+CONTEXT:
+${contextBlock}
 
-📘 Explanation
-- Give a simple explanation.
-
-🧩 Step-by-Step Breakdown
-- Explain the concept carefully.
-
-✅ Example
-- Provide a worked example if relevant.
-
-📝 Practice Question
-- Give one practice question without the answer.
+FORMAT:
+1. Explanation
+2. Step-by-step solution
+3. Example
+4. Practice question
 `;
 
-  // ─────────────────────────────
-  // GEMINI
-  // ─────────────────────────────
+  // 4. CALL GEMINI
   const response = await axios.post(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
     {
-      contents: [
-        {
-          parts: [
-            {
-              text: prompt
-            }
-          ]
-        }
-      ]
+      contents: [{ parts: [{ text: prompt }] }]
     }
   );
 
   const answer =
-    response.data?.candidates?.[0]?.content?.parts?.[0]?.text ||
+    response.data.candidates?.[0]?.content?.parts?.[0]?.text ||
     "No answer generated.";
 
   return {
     answer,
-    ragChunksFound
+    ragChunksFound: chunks.length,
+    usedChunks: topChunks.length > 0
   };
 };
