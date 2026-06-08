@@ -22,6 +22,9 @@ export const createNote = async (studentId, data, file) => {
       noteData.documentUrl = `/uploads/notes/${file.filename}`;
       noteData.originalFileName = file.originalname;
     }
+  } else if (data.imageUrl) {
+    // imageUrl provided as a URL string (no file upload)
+    noteData.imageUrl = data.imageUrl;
   }
 
   /* -----------------------------

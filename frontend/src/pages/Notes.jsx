@@ -113,8 +113,7 @@ export default function Notes() {
   /* ── upload ─────────────────────────────────────────────── */
   const submitNote = async (e) => {
     e.preventDefault();
-    if (!isOnline) return toast.error("You're offline. Connect to upload notes.");
-    if (!token)    return toast.error("You must be logged in to upload notes.");
+    if (!token) return toast.error("You must be logged in to upload notes.");
     if (!form.imageUrl && !file && !pastedText)
       return toast.error("Please provide a file, image URL, or paste some text.");
     if (fileError) return toast.error(fileError);
@@ -289,9 +288,9 @@ export default function Notes() {
         <h2 className="text-base font-semibold text-slate-800 mb-4">Add a New Note</h2>
         <form onSubmit={submitNote} className="space-y-4">
           <div className="grid gap-3 md:grid-cols-3">
-            <input className={inputCls} placeholder="Title" value={form.title}   onChange={e => setForm({ ...form, title:   e.target.value })} disabled={!isOnline} />
-            <input className={inputCls} placeholder="Subject" value={form.subject} onChange={e => setForm({ ...form, subject: e.target.value })} disabled={!isOnline} />
-            <input className={inputCls} placeholder="Topic"   value={form.topic}   onChange={e => setForm({ ...form, topic:   e.target.value })} disabled={!isOnline} />
+            <input className={inputCls} placeholder="Title" value={form.title}   onChange={e => setForm({ ...form, title:   e.target.value })} />
+            <input className={inputCls} placeholder="Subject" value={form.subject} onChange={e => setForm({ ...form, subject: e.target.value })} />
+            <input className={inputCls} placeholder="Topic"   value={form.topic}   onChange={e => setForm({ ...form, topic:   e.target.value })} />
           </div>
 
           <div className="grid gap-3 md:grid-cols-2">
@@ -311,19 +310,18 @@ export default function Notes() {
                   }
                   setFile(f); setFileError("");
                 }}
-                disabled={!isOnline}
               />
               {fileError && <p className="mt-1 text-xs text-red-600">{fileError}</p>}
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-600">Image URL <span className="text-slate-400 font-normal">(optional)</span></label>
-              <input className={inputCls} placeholder="https://..." value={form.imageUrl} onChange={e => setForm({ ...form, imageUrl: e.target.value })} disabled={!isOnline} />
+              <input className={inputCls} placeholder="https://..." value={form.imageUrl} onChange={e => setForm({ ...form, imageUrl: e.target.value })} />
             </div>
           </div>
 
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-600">Paste text <span className="text-slate-400 font-normal">(optional)</span></label>
-            <textarea rows={4} className={inputCls} placeholder="Paste your notes or any text here…" value={pastedText} onChange={e => setPastedText(e.target.value)} disabled={!isOnline} />
+            <textarea rows={4} className={inputCls} placeholder="Paste your notes or any text here…" value={pastedText} onChange={e => setPastedText(e.target.value)} />
           </div>
 
           <LoadingButton loading={uploading} loadingText="Processing…" className="w-full rounded-xl bg-blue-600 py-3 text-white font-semibold hover:bg-blue-700 disabled:opacity-60">
