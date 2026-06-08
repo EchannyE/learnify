@@ -14,72 +14,59 @@ export default function Tutor() {
   const [messages, setMessages] = useState([]);
 
   const askTutor = async (e) => {
-  e.preventDefault();
+    e.preventDefault();
 
-  if (!question.trim()) return;
+    if (!question.trim()) return;
 
-  const userQuestion = question;
+    const userQuestion = question;
+    setMessages((prev) => [...prev, { role: "user", text: userQuestion }]);
+    setQuestion("");
 
-  setMessages((prev) => [
-    ...prev,
-    {
-      role: "user",
-      text: userQuestion
+    try {
+      setLoading(true);
+
+      const res = await api.post("/tutor/ask", {
+        subject,
+        topic: topic || undefined,
+        question: userQuestion,
+        noteId
+      });
+
+      const data = res.data.data;
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "ai",
+          text: data.answer || data,
+          ragChunksFound: data.ragChunksFound || 0
+        }
+      ]);
+    } catch (err) {
+      const msg = err?.response?.data?.message;
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "error",
+          text: msg || "Something went wrong. Please check your connection and try again."
+        }
+      ]);
+    } finally {
+      setLoading(false);
     }
-  ]);
+  };
 
-  setQuestion("");
-
-  try {
-    setLoading(true);
-
-    const res = await api.post("/tutor/ask", {
-      subject,
-      topic: topic || undefined,
-      question: userQuestion,
-      noteId
-    });
-
-    const data = res.data.data;
-
-    const aiMessage = {
-      role: "ai",
-      text: data.answer || data,
-      ragChunksFound: data.ragChunksFound || 0
-    };
-
-    setMessages((prev) => [...prev, aiMessage]);
-  } catch (error) {
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "ai",
-        text: "Unable to get tutor response. Please try again."
-      }
-    ]);
-  } finally {
-    setLoading(false);
-  }
-};
   return (
     <main className="mx-auto max-w-4xl px-6 py-10 space-y-6">
 
-      {/* HEADER */}
       <section>
-        <h1 className="text-3xl font-bold text-slate-900">
-          AI Tutor
-        </h1>
-
+        <h1 className="text-3xl font-bold text-slate-900">AI Tutor</h1>
         <p className="mt-2 text-slate-600 max-w-2xl">
           Ask questions based on your notes or any subject. Get step-by-step explanations and learning support.
         </p>
       </section>
 
-      {/* CHAT AREA */}
       <section className="rounded-2xl border bg-white p-5 shadow-sm">
-
         <div className="h-[420px] overflow-y-auto space-y-4 p-2">
-
           {messages.length === 0 && (
             <div className="text-center text-slate-500 mt-20">
               Start by asking a question 👇
@@ -92,9 +79,14 @@ export default function Tutor() {
               className={`max-w-[80%] rounded-2xl p-4 text-sm whitespace-pre-wrap ${
                 msg.role === "user"
                   ? "ml-auto bg-blue-600 text-white"
+                  : msg.role === "error"
+                  ? "bg-red-50 border border-red-200 text-red-800"
                   : "bg-slate-100 text-slate-800"
               }`}
             >
+              {msg.role === "error" && (
+                <p className="font-semibold mb-1">⚠ Error</p>
+              )}
               {msg.text}
             </div>
           ))}
@@ -106,14 +98,8 @@ export default function Tutor() {
           )}
         </div>
 
-        {/* INPUT PANEL */}
-        <form
-          onSubmit={askTutor}
-          className="mt-4 flex flex-col gap-3 border-t pt-4"
-        >
-
+        <form onSubmit={askTutor} className="mt-4 flex flex-col gap-3 border-t pt-4">
           <div className="flex flex-col md:flex-row gap-3">
-
             <select
               className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-100"
               value={subject}
@@ -134,7 +120,6 @@ export default function Tutor() {
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
             />
-
           </div>
 
           <input
@@ -154,7 +139,6 @@ export default function Tutor() {
               Ask Tutor
             </LoadingButton>
           </div>
-
         </form>
       </section>
     </main>
