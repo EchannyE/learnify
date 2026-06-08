@@ -30,7 +30,7 @@ app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 app.use(cors({
   origin: [
     "http://localhost:5173",
-    "https://learnify-six-mu.vercel.app"
+    "https://learnify-lyart.vercel.app/"
   ],
   credentials: true
 }));
