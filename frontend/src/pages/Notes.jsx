@@ -155,12 +155,22 @@ export default function Notes() {
     try {
       setQLoading(true);
       setQResult(null);
-      setQPollMsg("Sending to AI — this usually takes 15–30 seconds…");
-      await api.post("/quizzes/generate", { noteId: selected._id, questionType: qType, extractedText: "" });
-      pollForQuiz(selected._id);
+      setQPollMsg("Generating quiz with AI — please wait…");
+      const res = await api.post("/quizzes/generate", { noteId: selected._id, questionType: qType });
+      /* direct response contains quiz (Gemini path) */
+      const quiz = res.data?.data?.quiz || res.data?.data;
+      if (quiz?.questions?.length) {
+        setQResult(quiz);
+        setQPollMsg("");
+        toast.success("Quiz ready!");
+      } else {
+        /* n8n async path — fall back to polling */
+        pollForQuiz(selected._id);
+      }
     } catch (err) {
       setQPollMsg("");
-      toast.error(err?.response?.data?.message || "Failed to start quiz generation. Please try again.");
+      toast.error(err?.response?.data?.message || "Failed to generate quiz. Please try again.");
+    } finally {
       setQLoading(false);
     }
   };
@@ -172,20 +182,20 @@ export default function Notes() {
       try {
         const res = await api.get("/quizzes");
         const quizzes = res.data.data || [];
-        const match = quizzes.find(q => String(q.note) === String(noteId) || String(q.noteId) === String(noteId));
+        const match = quizzes.find(q => String(q.note) === String(noteId));
         if (match) {
           clearInterval(interval);
           setQResult(match);
           setQPollMsg("");
           setQLoading(false);
           toast.success("Quiz ready!");
-        } else if (attempts >= 15) {
+        } else if (attempts >= 20) {
           clearInterval(interval);
-          setQPollMsg("Generation is taking longer than expected. Check the Quiz page for results.");
+          setQPollMsg("Taking longer than expected — check the Quiz page for results.");
           setQLoading(false);
         }
       } catch {
-        if (attempts >= 15) { clearInterval(interval); setQLoading(false); }
+        if (attempts >= 20) { clearInterval(interval); setQLoading(false); }
       }
     }, 3000);
   };
@@ -197,12 +207,21 @@ export default function Notes() {
     try {
       setPLoading(true);
       setPResult(null);
-      setPPollMsg("Sending to AI — this usually takes 15–30 seconds…");
-      await api.post("/study-plans/generate", { noteId: selected._id, examDate, availableHoursPerDay: hours });
-      pollForPlan(selected._id);
+      setPPollMsg("Generating study plan with AI — please wait…");
+      const res = await api.post("/study-plans/generate", { noteId: selected._id, examDate, availableHoursPerDay: hours });
+      /* direct response contains plan (Gemini path) */
+      const plan = res.data?.data?.studyPlan || res.data?.data;
+      if (plan?.plan?.length) {
+        setPResult(plan);
+        setPPollMsg("");
+        toast.success("Study plan ready!");
+      } else {
+        /* n8n async path — fall back to polling */
+        pollForPlan(selected._id);
+      }
     } catch (err) {
       setPPollMsg("");
-      toast.error(err?.response?.data?.message || "Failed to start study plan generation. Please try again.");
+      toast.error(err?.response?.data?.message || "Failed to generate study plan. Please try again.");
       setPLoading(false);
     }
   };
@@ -214,7 +233,7 @@ export default function Notes() {
       try {
         const res = await api.get("/study-plans");
         const plans = res.data.data || [];
-        const match = plans.find(p => String(p.note) === String(noteId) || String(p.noteId) === String(noteId));
+        const match = plans.find(p => String(p.note) === String(noteId));
         if (match) {
           clearInterval(interval);
           setPResult(match);
