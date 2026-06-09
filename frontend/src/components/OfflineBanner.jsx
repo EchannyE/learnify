@@ -10,15 +10,15 @@ export default function OfflineBanner() {
     <div
       role="status"
       aria-live="polite"
-      className="flex items-center justify-center gap-2 bg-yellow-50 border-b border-yellow-200 px-4 py-3 text-sm text-yellow-800"
+      className="flex flex-col items-center gap-1 bg-yellow-50 border-b border-yellow-200 px-4 py-3 text-sm text-yellow-800
+                 sm:flex-row sm:justify-center sm:gap-2 sm:py-2"
     >
-      <WifiOff size={16} className="text-yellow-700" />
-
-      <span className="font-medium">
+      <span className="flex items-center gap-1.5 font-semibold">
+        <WifiOff size={15} className="shrink-0 text-yellow-700" />
         You are offline.
       </span>
 
-      <span className="text-yellow-700">
+      <span className="text-center text-yellow-700 sm:text-left">
         You can still access saved notes, quizzes, and study plans.
       </span>
     </div>
