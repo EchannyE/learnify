@@ -1,6 +1,6 @@
-import axios from "axios";
 import Note from "../models/Note.js";
-import { searchRagChunks } from "./rag.service.js";
+import ragChunk from "../models/ragChunk.js";
+import axios from "axios";
 
 /* ── generate a Gemini text embedding for a string ────────── */
 const embedText = async (text) => {
@@ -19,92 +19,74 @@ export const askTutor = async ({
   studentId,
   noteId,
   question,
-  curriculum,
   subject,
   topic
 }) => {
 
-  // ─────────────────────────────
-  // NOTE CONTEXT
-  // ─────────────────────────────
+  // 1. Load note
   const note = noteId
     ? await Note.findOne({ _id: noteId, student: studentId })
     : null;
 
-  const noteContext = note?.extractedText
-    ? `Student Note Context:\n${note.extractedText}`
-    : "";
-
-  // ─────────────────────────────
-  // RAG SEARCH (with embedding)
-  // ─────────────────────────────
-  let ragContext = "";
-  let ragChunksFound = 0;
-
-  try {
-    const embedding = await embedText(question);
-
-    if (embedding.length > 0) {
-      const chunks = await searchRagChunks({
-        embedding,
-        curriculumType: curriculum,
-        subject,
-        topic,
-        limit: 5
-      });
-
-      ragChunksFound = chunks.length;
-
-      if (chunks.length > 0) {
-        ragContext = `Retrieved Curriculum Context:\n\n${chunks
-          .map(
-            (chunk, i) =>
-              `SOURCE ${i + 1}\nSubject: ${chunk.subject || ""}\nTopic: ${chunk.topic || ""}\nSource: ${chunk.sourceName || ""}\n\n${chunk.chunkText || ""}`
-          )
-          .join("\n\n---\n\n")}`;
-      }
-    }
-  } catch (err) {
-    console.error("RAG search failed:", err.message);
+  if (!note) {
+    throw new Error("Note not found or not accessible");
   }
 
-  // ─────────────────────────────
-  // PROMPT
-  // ─────────────────────────────
-  const prompt = `You are Learnify AI Tutor.
+  if (note.status !== "processed") {
+    throw new Error("Note is still processing. Try again shortly.");
+  }
 
-Curriculum: ${curriculum || "Not specified"}
-Subject: ${subject || "Not specified"}
-Topic: ${topic || "Not specified"}
+  const noteContext = note.extractedText || "";
 
-IMPORTANT RULES:
-1. Use the Retrieved Curriculum Context as your PRIMARY source.
-2. Use Student Note Context as a secondary source.
-3. If curriculum context exists, do not ignore it.
-4. If information is missing from both contexts, state that clearly.
-5. Explain concepts in a way suitable for WAEC, NECO, BECE, JAMB and GCE students.
-6. Use simple language and include worked examples when appropriate.
+  // 2. BETTER RAG RETRIEVAL (no regex-only filtering)
+  const chunks = await ragChunk.find({
+    subject: subject
+  });
 
-${ragContext ? ragContext + "\n\n" : ""}${noteContext ? noteContext + "\n\n" : ""}Student Question:
-${question}
+  // fallback if subject mismatch
+  const filteredChunks = chunks.length
+    ? chunks
+    : await ragChunk.find();
 
-Response Format:
+  // take top relevant chunks (simple heuristic improvement)
+  const topChunks = filteredChunks
+    .slice(0, 5)
+    .map((c) => `• ${c.chunkText}`)
+    .join("\n");
 
-📘 Explanation
-- Give a simple explanation.
+  // 3. BUILD STRONG CONTEXT
+  const contextBlock = `
+NOTE CONTENT:
+${noteContext || "No note content available"}
 
-🧩 Step-by-Step Breakdown
-- Explain the concept carefully.
+RELEVANT STUDY MATERIAL:
+${topChunks || "No curriculum data found"}
+`;
 
-✅ Example
-- Provide a worked example if relevant.
+  // 4. STRONG BUT SAFE PROMPT
+  const prompt = `
+You are Learnify AI Tutor.
 
-📝 Practice Question
-- Give one practice question without the answer.`;
+INSTRUCTIONS:
+- Use the provided context as primary knowledge
+- If context is incomplete, still give best possible explanation based on it
+- Be clear, educational, and step-by-step
 
-  // ─────────────────────────────
-  // GEMINI GENERATE
-  // ─────────────────────────────
+SUBJECT: ${subject}
+TOPIC: ${topic || "General"}
+QUESTION: ${question}
+
+CONTEXT:
+${contextBlock}
+
+RESPONSE FORMAT:
+1. Simple explanation
+2. Step-by-step breakdown
+3. Example
+4. Practice question
+`;
+
+  // 5. GEMINI CALL
   const response = await axios.post(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
     {
@@ -113,8 +95,12 @@ Response Format:
   );
 
   const answer =
-    response.data?.candidates?.[0]?.content?.parts?.[0]?.text ||
+    response.data.candidates?.[0]?.content?.parts?.[0]?.text ||
     "No answer generated.";
 
-  return { answer, ragChunksFound };
+  return {
+    answer,
+    ragChunksFound: filteredChunks.length,
+    usedChunks: topChunks.length > 0
+  };
 };

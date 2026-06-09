@@ -18,8 +18,14 @@ export default function Tutor() {
 
     if (!question.trim()) return;
 
-    const userQuestion = question;
-    setMessages((prev) => [...prev, { role: "user", text: userQuestion }]);
+    const userText = question;
+
+    // Add user message immediately
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", text: userText }
+    ]);
+
     setQuestion("");
 
     try {
@@ -28,26 +34,44 @@ export default function Tutor() {
       const res = await api.post("/tutor/ask", {
         subject,
         topic: topic || undefined,
-        question: userQuestion,
-        noteId
+        question: userText,
+        noteId,
+        curriculum: "WAEC"
       });
 
-      const data = res.data.data;
+      const data = res?.data?.data;
+
+      // SAFE RESPONSE PARSING (handles all backend shapes)
+      let answerText = "";
+
+      if (typeof data === "string") {
+        answerText = data;
+      } else if (data?.answer) {
+        answerText = data.answer;
+      } else if (data?.text) {
+        answerText = data.text;
+      } else if (data?.response) {
+        answerText = data.response;
+      } else {
+        answerText = "No response generated.";
+      }
+
+      const aiMessage = {
+        role: "ai",
+        text: answerText,
+        ragChunksFound: data?.ragChunksFound ?? 0
+      };
+
+      setMessages((prev) => [...prev, aiMessage]);
+
+    } catch (error) {
       setMessages((prev) => [
         ...prev,
         {
           role: "ai",
-          text: data.answer || data,
-          ragChunksFound: data.ragChunksFound || 0
-        }
-      ]);
-    } catch (err) {
-      const msg = err?.response?.data?.message;
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "error",
-          text: msg || "Something went wrong. Please check your connection and try again."
+          text:
+            error?.response?.data?.message ||
+            "Unable to get tutor response. Please try again."
         }
       ]);
     } finally {
@@ -61,10 +85,11 @@ export default function Tutor() {
       <section>
         <h1 className="text-3xl font-bold text-slate-900">AI Tutor</h1>
         <p className="mt-2 text-slate-600 max-w-2xl">
-          Ask questions based on your notes or any subject. Get step-by-step explanations and learning support.
+          Ask questions based on your notes and get step-by-step explanations.
         </p>
       </section>
 
+      {/* CHAT BOX */}
       <section className="rounded-2xl border bg-white p-5 shadow-sm">
         <div className="h-[420px] overflow-y-auto space-y-4 p-2">
           {messages.length === 0 && (
@@ -84,10 +109,13 @@ export default function Tutor() {
                   : "bg-slate-100 text-slate-800"
               }`}
             >
-              {msg.role === "error" && (
-                <p className="font-semibold mb-1">⚠ Error</p>
+              <div>{msg.text}</div>
+
+              {msg.role === "ai" && (
+                <div className="mt-2 text-xs text-slate-500">
+                  RAG sources used: {msg.ragChunksFound}
+                </div>
               )}
-              {msg.text}
             </div>
           ))}
 
@@ -98,12 +126,17 @@ export default function Tutor() {
           )}
         </div>
 
-        <form onSubmit={askTutor} className="mt-4 flex flex-col gap-3 border-t pt-4">
+        {/* INPUT */}
+        <form
+          onSubmit={askTutor}
+          className="mt-4 flex flex-col gap-3 border-t pt-4"
+        >
+
           <div className="flex flex-col md:flex-row gap-3">
             <select
-              className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-100"
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
+              className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm"
             >
               <option>Mathematics</option>
               <option>English</option>
@@ -115,18 +148,18 @@ export default function Tutor() {
             </select>
 
             <input
-              className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-100"
-              placeholder="Topic (optional, e.g., Algebra, Photosynthesis)..."
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
+              className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm"
+              placeholder="Topic (optional)"
             />
           </div>
 
           <input
-            className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-100"
-            placeholder="Ask your question..."
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
+            className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm"
+            placeholder="Ask your question..."
           />
 
           <div className="flex justify-end">
