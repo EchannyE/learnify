@@ -2,10 +2,12 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "../api/axios";
 import LoadingButton from "../components/LoadingButton";
+import { useToast } from "../context/ToastContext";
 import { Eye, EyeOff } from "lucide-react";
 
 export default function Register() {
   const navigate = useNavigate();
+  const toast = useToast();
 
   const [form, setForm] = useState({
     fullName: "",
@@ -13,7 +15,6 @@ export default function Register() {
     password: "",
     curriculum: "WAEC"
   });
-
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -22,13 +23,16 @@ export default function Register() {
 
     try {
       setLoading(true);
-
       await api.post("/auth/register", form);
-
-      alert("Account created successfully.");
+      toast.success("Account created successfully! Please log in.");
       navigate("/login");
     } catch (err) {
-      alert(err?.response?.data?.message || "Registration failed.");
+      const msg = err?.response?.data?.message;
+      if (msg === "User already exists") {
+        toast.error("An account with this email already exists. Try logging in instead.");
+      } else {
+        toast.error(msg || "Could not create your account. Please check your details and try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -39,76 +43,50 @@ export default function Register() {
 
   return (
     <main className="mx-auto flex min-h-[80vh] max-w-md items-center px-6">
-
       <form
         onSubmit={register}
         className="w-full rounded-2xl border bg-white p-8 shadow-md"
       >
-
-        {/* HEADER */}
         <div className="text-center">
-          <h1 className="text-3xl font-bold text-slate-900">
-            Create Account
-          </h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Start your AI-powered learning journey
-          </p>
+          <h1 className="text-3xl font-bold text-slate-900">Create Account</h1>
+          <p className="mt-1 text-sm text-slate-500">Start your AI-powered learning journey</p>
         </div>
 
-        {/* FORM */}
         <div className="mt-6 space-y-4">
-
-          {/* FULL NAME */}
           <div>
-            <label className="text-sm font-medium text-slate-600">
-              Full Name
-            </label>
+            <label className="text-sm font-medium text-slate-600">Full Name</label>
             <input
               className={inputClass}
               placeholder="John Doe"
               value={form.fullName}
-              onChange={(e) =>
-                setForm({ ...form, fullName: e.target.value })
-              }
+              onChange={(e) => setForm({ ...form, fullName: e.target.value })}
               required
             />
           </div>
 
-          {/* EMAIL */}
           <div>
-            <label className="text-sm font-medium text-slate-600">
-              Email
-            </label>
+            <label className="text-sm font-medium text-slate-600">Email</label>
             <input
               className={inputClass}
               type="email"
               placeholder="you@example.com"
               value={form.email}
-              onChange={(e) =>
-                setForm({ ...form, email: e.target.value })
-              }
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
               required
             />
           </div>
 
-          {/* PASSWORD */}
           <div>
-            <label className="text-sm font-medium text-slate-600">
-              Password
-            </label>
-
+            <label className="text-sm font-medium text-slate-600">Password</label>
             <div className="relative">
               <input
                 className={inputClass + " pr-10"}
                 type={showPassword ? "text" : "password"}
                 placeholder="Create a strong password"
                 value={form.password}
-                onChange={(e) =>
-                  setForm({ ...form, password: e.target.value })
-                }
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
                 required
               />
-
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
@@ -119,18 +97,12 @@ export default function Register() {
             </div>
           </div>
 
-          {/* CURRICULUM */}
           <div>
-            <label className="text-sm font-medium text-slate-600">
-              Curriculum
-            </label>
-
+            <label className="text-sm font-medium text-slate-600">Curriculum</label>
             <select
               className={inputClass}
               value={form.curriculum}
-              onChange={(e) =>
-                setForm({ ...form, curriculum: e.target.value })
-              }
+              onChange={(e) => setForm({ ...form, curriculum: e.target.value })}
             >
               <option value="WAEC">WAEC</option>
               <option value="NECO">NECO</option>
@@ -140,7 +112,6 @@ export default function Register() {
             </select>
           </div>
 
-          {/* SUBMIT */}
           <LoadingButton
             loading={loading}
             loadingText="Creating account..."
@@ -151,13 +122,9 @@ export default function Register() {
           </LoadingButton>
         </div>
 
-        {/* FOOTER */}
         <p className="mt-6 text-center text-sm text-slate-500">
           Already have an account?{" "}
-          <Link
-            to="/login"
-            className="font-semibold text-blue-600 hover:underline"
-          >
+          <Link to="/login" className="font-semibold text-blue-600 hover:underline">
             Login
           </Link>
         </p>

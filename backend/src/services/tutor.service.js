@@ -2,6 +2,19 @@ import Note from "../models/Note.js";
 import ragChunk from "../models/ragChunk.js";
 import axios from "axios";
 
+/* ── generate a Gemini text embedding for a string ────────── */
+const embedText = async (text) => {
+  const res = await axios.post(
+    `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${process.env.GEMINI_API_KEY}`,
+    {
+      model: "models/text-embedding-004",
+      content: { parts: [{ text }] }
+    }
+  );
+  return res.data?.embedding?.values ?? [];
+};
+
+/* ── main tutor function ──────────────────────────────────── */
 export const askTutor = async ({
   studentId,
   noteId,

@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import api from "../api/axios";
 import LoadingButton from "../components/LoadingButton";
 import useOnlineStatus from "../hooks/useOnlineStatus";
+import { useToast } from "../context/ToastContext";
 import { getOfflineItems, saveOfflineItems } from "../utils/offlineDb";
 import {
   downloadPdf,
@@ -13,8 +14,8 @@ import {
 export default function StudyPlanner() {
   const [searchParams] = useSearchParams();
   const noteId = searchParams.get("noteId");
-
   const isOnline = useOnlineStatus();
+  const toast = useToast();
 
   const [examDate, setExamDate] = useState("");
   const [availableHoursPerDay, setAvailableHoursPerDay] = useState(2);
@@ -28,10 +29,8 @@ export default function StudyPlanner() {
         setPlans(offline);
         return;
       }
-
       const res = await api.get("/study-plans");
       const server = res.data.data || [];
-
       setPlans(server);
       await saveOfflineItems("studyPlans", server);
     } catch {
@@ -47,22 +46,21 @@ export default function StudyPlanner() {
   const generateStudyPlan = async (e) => {
     e.preventDefault();
 
-    if (!isOnline) return alert("Offline mode: cannot generate plan.");
-    if (!noteId) return alert("Please scan a note first.");
+    if (!isOnline) {
+      return toast.error("You're offline. Connect to the internet to generate a study plan.");
+    }
+    if (!noteId) {
+      return toast.error("Please open a note first — go to Notes and click Planner on a saved note.");
+    }
 
     try {
       setLoading(true);
-
-      await api.post("/study-plans/generate", {
-        noteId,
-        examDate,
-        availableHoursPerDay
-      });
-
-      alert("Study plan generation started.");
+      await api.post("/study-plans/generate", { noteId, examDate, availableHoursPerDay });
+      toast.success("Study plan generation started. Your plan will appear below shortly.");
       await fetchPlans();
     } catch (err) {
-      alert(err?.response?.data?.message || "Study planner failed.");
+      const msg = err?.response?.data?.message;
+      toast.error(msg || "Failed to generate study plan. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -73,11 +71,7 @@ export default function StudyPlanner() {
       filename: `study-plan-${plan.examDate?.slice(0, 10) || "learnify"}`,
       title: "LEARNIFY STUDY PLAN",
       content: formatStudyPlanForDownload(plan),
-      meta: {
-        subject: plan.plan?.[0]?.subject,
-        topic: plan.plan?.[0]?.topic,
-        extra: `Exam: ${plan.examDate?.slice(0, 10) || "N/A"}`
-      }
+      meta: { subject: plan.plan?.[0]?.subject, topic: plan.plan?.[0]?.topic, extra: `Exam: ${plan.examDate?.slice(0, 10) || "N/A"}` }
     });
   };
 
@@ -86,10 +80,7 @@ export default function StudyPlanner() {
       filename: `study-plan-${plan.examDate?.slice(0, 10) || "learnify"}`,
       title: "LEARNIFY STUDY PLAN",
       content: formatStudyPlanForDownload(plan),
-      meta: {
-        subject: plan.plan?.[0]?.subject,
-        topic: plan.plan?.[0]?.topic
-      }
+      meta: { subject: plan.plan?.[0]?.subject, topic: plan.plan?.[0]?.topic }
     });
   };
 
@@ -99,16 +90,11 @@ export default function StudyPlanner() {
   return (
     <main className="mx-auto max-w-5xl px-6 py-10 space-y-8">
 
-      {/* HEADER */}
       <section>
-        <h1 className="text-3xl font-bold text-slate-900">
-          Study Planner
-        </h1>
-
+        <h1 className="text-3xl font-bold text-slate-900">Study Planner</h1>
         <p className="mt-2 text-slate-600 max-w-2xl">
           Generate structured revision schedules from your notes based on your exam date and available study time.
         </p>
-
         {!isOnline && (
           <div className="mt-4 rounded-xl bg-yellow-50 p-3 text-sm text-yellow-800">
             Offline mode enabled — viewing saved plans only.
@@ -116,122 +102,81 @@ export default function StudyPlanner() {
         )}
       </section>
 
-      {/* GENERATOR CARD */}
       <section className="rounded-2xl border bg-white p-6 shadow-sm">
         <form onSubmit={generateStudyPlan} className="grid gap-4 md:grid-cols-3">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-600">Exam Date</label>
+            <input
+              type="date"
+              className={inputClass}
+              value={examDate}
+              onChange={(e) => setExamDate(e.target.value)}
+              disabled={!isOnline}
+              required
+            />
+          </div>
 
-          <input
-            type="date"
-            className={inputClass}
-            value={examDate}
-            onChange={(e) => setExamDate(e.target.value)}
-            disabled={!isOnline}
-            required
-          />
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-600">Hours per Day</label>
+            <input
+              type="number"
+              min="1"
+              max="12"
+              className={inputClass}
+              value={availableHoursPerDay}
+              onChange={(e) => setAvailableHoursPerDay(Number(e.target.value))}
+              disabled={!isOnline}
+              required
+            />
+          </div>
 
-          <input
-            type="number"
-            min="1"
-            className={inputClass}
-            value={availableHoursPerDay}
-            onChange={(e) =>
-              setAvailableHoursPerDay(Number(e.target.value))
-            }
-            disabled={!isOnline}
-            required
-          />
-
-          <LoadingButton
-            loading={loading}
-            loadingText="Generating..."
-            className="rounded-xl bg-yellow-600 py-3 text-white font-semibold hover:bg-yellow-700"
-          >
-            Generate Plan
-          </LoadingButton>
-
+          <div className="flex items-end">
+            <LoadingButton
+              loading={loading}
+              loadingText="Generating..."
+              className="w-full rounded-xl bg-yellow-600 py-3 text-white font-semibold hover:bg-yellow-700"
+            >
+              Generate Plan
+            </LoadingButton>
+          </div>
         </form>
       </section>
 
-      {/* PLANS LIST */}
       <section className="space-y-6">
-
         {plans.length === 0 ? (
           <div className="rounded-xl bg-white p-6 text-center text-slate-500 shadow-sm">
             No study plans available yet.
           </div>
         ) : (
           plans.map((plan) => (
-            <div
-              key={plan._id}
-              className="rounded-2xl border bg-white p-6 shadow-sm"
-            >
-
-              {/* HEADER */}
+            <div key={plan._id} className="rounded-2xl border bg-white p-6 shadow-sm">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-
                 <div>
-                  <h2 className="text-lg font-semibold text-slate-900">
-                    Study Plan
-                  </h2>
-
-                  <p className="text-sm text-slate-500">
-                    Exam Date: {plan.examDate?.slice(0, 10)}
-                  </p>
+                  <h2 className="text-lg font-semibold text-slate-900">Study Plan</h2>
+                  <p className="text-sm text-slate-500">Exam Date: {plan.examDate?.slice(0, 10)}</p>
                 </div>
-
                 <div className="flex gap-2 flex-wrap">
-                  <button
-                    onClick={() => downloadStudyPlanPdf(plan)}
-                    className="rounded-xl bg-yellow-600 px-4 py-2 text-sm text-white hover:bg-yellow-700"
-                  >
-                    PDF
-                  </button>
-
-                  <button
-                    onClick={() => downloadStudyPlanDocx(plan)}
-                    className="rounded-xl bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700"
-                  >
-                    DOCX
-                  </button>
+                  <button onClick={() => downloadStudyPlanPdf(plan)} className="rounded-xl bg-yellow-600 px-4 py-2 text-sm text-white hover:bg-yellow-700">PDF</button>
+                  <button onClick={() => downloadStudyPlanDocx(plan)} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700">DOCX</button>
                 </div>
               </div>
 
-              {/* TIMELINE GRID */}
               <div className="mt-6 grid gap-4 md:grid-cols-2">
-
                 {plan.plan?.map((item, index) => (
-                  <div
-                    key={index}
-                    className="rounded-xl bg-yellow-50 p-4 border border-yellow-100"
-                  >
-
+                  <div key={index} className="rounded-xl bg-yellow-50 p-4 border border-yellow-100">
                     <div className="flex items-center justify-between">
-                      <h3 className="font-semibold text-slate-900">
-                        {item.day}
-                      </h3>
-
-                      <span className="text-xs font-medium text-yellow-700">
-                        {item.durationMinutes} min
-                      </span>
+                      <h3 className="font-semibold text-slate-900">{item.day}</h3>
+                      <span className="text-xs font-medium text-yellow-700">{item.durationMinutes} min</span>
                     </div>
-
-                    <p className="mt-2 text-sm text-slate-700">
-                      {item.subject} • {item.topic}
-                    </p>
-
-                    <p className="mt-2 text-sm text-slate-600">
-                      {item.task}
-                    </p>
-
+                    <p className="mt-2 text-sm text-slate-700">{item.subject} • {item.topic}</p>
+                    <p className="mt-2 text-sm text-slate-600">{item.task}</p>
                   </div>
                 ))}
-
               </div>
             </div>
           ))
         )}
       </section>
-
     </main>
   );
 }

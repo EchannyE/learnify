@@ -82,12 +82,8 @@ export default function Tutor() {
   return (
     <main className="mx-auto max-w-4xl px-6 py-10 space-y-6">
 
-      {/* HEADER */}
       <section>
-        <h1 className="text-3xl font-bold text-slate-900">
-          AI Tutor
-        </h1>
-
+        <h1 className="text-3xl font-bold text-slate-900">AI Tutor</h1>
         <p className="mt-2 text-slate-600 max-w-2xl">
           Ask questions based on your notes and get step-by-step explanations.
         </p>
@@ -95,9 +91,7 @@ export default function Tutor() {
 
       {/* CHAT BOX */}
       <section className="rounded-2xl border bg-white p-5 shadow-sm">
-
         <div className="h-[420px] overflow-y-auto space-y-4 p-2">
-
           {messages.length === 0 && (
             <div className="text-center text-slate-500 mt-20">
               Start by asking a question 👇
@@ -110,6 +104,8 @@ export default function Tutor() {
               className={`max-w-[80%] rounded-2xl p-4 text-sm whitespace-pre-wrap ${
                 msg.role === "user"
                   ? "ml-auto bg-blue-600 text-white"
+                  : msg.role === "error"
+                  ? "bg-red-50 border border-red-200 text-red-800"
                   : "bg-slate-100 text-slate-800"
               }`}
             >
@@ -137,7 +133,6 @@ export default function Tutor() {
         >
 
           <div className="flex flex-col md:flex-row gap-3">
-
             <select
               value={subject}
               onChange={(e) => setSubject(e.target.value)}

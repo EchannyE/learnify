@@ -1,0 +1,1857 @@
+{
+  "name": "Learnify",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "learnify-quiz",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a747c701-56b7-4ce6-9ac5-edffb9a728fb",
+      "name": "Webhook - Quiz Generator",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        656
+      ],
+      "webhookId": "learnify-quiz"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f11a79cc-ca41-42ce-ba51-47a08040d580",
+              "name": "backendUrl",
+              "value": "https://learnify-xkts.onrender.com",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5d73c5d1-796f-4d8f-911a-b347df164964",
+      "name": "Set Config - Quiz",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -480,
+        656
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json;\n\nconst questionType = body.questionType || 'mcq';\n\nconst typeInstruction =\n  questionType === 'closed_ended'\n    ? 'Generate close-ended questions with one correct short answer.'\n    : 'Generate multiple choice questions with exactly four options and one correct answer.';\n\nconst prompt = `\nYou are Learnify Quiz Generator (strict educational AI).\n\nIMPORTANT RULE:\nUse ONLY the Curriculum Context and Scanned Note below.\nDo NOT use external knowledge outside provided context.\n\n---\n\nSubject: ${body.subject || ''}\nTopic: ${body.topic || ''}\nQuestion Type: ${questionType}\n\n---\n\nCURRICULUM CONTEXT (PRIMARY SOURCE - MUST PRIORITIZE):\n${body.curriculumContext || 'No curriculum context available.'}\n\n---\n\nSTUDENT NOTE CONTEXT:\n${body.extractedText || 'No scanned note provided.'}\n\n---\n\nTASK:\n${typeInstruction}\n\n---\n\nSTRICT OUTPUT RULES:\n- Output ONLY valid JSON (no markdown, no explanations, no backticks)\n- Generate exactly 10 questions\n- Each question must strictly follow WAEC / NECO / JAMB standard\n- Do NOT repeat questions\n- Do NOT hallucinate facts not present in context\n\n---\n\nJSON SCHEMA:\n{\n  \"studentId\": \"${body.studentId || ''}\",\n  \"noteId\": \"${body.noteId || ''}\",\n  \"subject\": \"${body.subject || ''}\",\n  \"topic\": \"${body.topic || ''}\",\n  \"questionType\": \"${questionType}\",\n  \"ragChunksUsed\": ${body.ragChunksFound || 0},\n  \"questions\": [\n    {\n      \"question\": \"\",\n      \"options\": [],\n      \"correctAnswer\": \"\",\n      \"explanation\": \"\",\n      \"type\": \"${questionType}\"\n    }\n  ]\n}\n`;\n\nreturn [{ json: { ...body, prompt } }];"
+      },
+      "id": "a5154d78-00d8-4e20-b03f-34fc44d3cbb7",
+      "name": "Code - Build Quiz Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        528,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  contents: [\n    {\n      parts: [\n        {\n          text: $json.prompt || \"Generate a quiz based on educational content.\"\n        }\n      ]\n    }\n  ]\n}) }}",
+        "options": {}
+      },
+      "id": "9e6d62b6-368f-450f-9de6-fbedc5b7fc26",
+      "name": "Gemini Credential - Generate Quiz",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        768,
+        656
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "pmE4rZgr0subA0kl",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\n\nlet text =\n  response?.candidates?.[0]?.content?.parts?.[0]?.text ||\n  '';\n\nif (!text) {\n  throw new Error('Empty response from Gemini');\n}\n\n// ─────────────────────────────\n// CLEAN CODE BLOCKS SAFELY\n// ─────────────────────────────\ntext = text\n  .replace(/```json/gi, '')\n  .replace(/```/g, '')\n  .replace(/^\\s*json\\s*/gi, '')\n  .trim();\n\n// ─────────────────────────────\n// SAFE JSON PARSE\n// ─────────────────────────────\nlet parsed;\n\ntry {\n  parsed = JSON.parse(text);\n} catch (error) {\n  throw new Error(\n    'Gemini JSON parse failed. Check prompt or model output format.'\n  );\n}\n\n// ─────────────────────────────\n// OUTPUT\n// ─────────────────────────────\nreturn [{ json: parsed }];"
+      },
+      "id": "3d033a71-2f8d-4564-a1a1-e7a9d622b1df",
+      "name": "Code - Parse Quiz JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1024,
+        656
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{\n  ($node[\"Set Config - Quiz\"].json.backendUrl || \"\").replace(/\\/$/, \"\") + \"/api/quizzes/generated\"\n}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "d9dba9e5-7b2f-4f50-a6ad-a4c391fb4aea",
+      "name": "Backend - Save Quiz",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1280,
+        656
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, message: 'Quiz generated and saved', data: $json } }}",
+        "options": {}
+      },
+      "id": "7af63cbb-4ecf-46d8-a1f1-6a5a9170a5a6",
+      "name": "Respond - Quiz Complete",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1568,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "learnify-study-planner",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "72061358-f790-4abe-b367-f0ffbf2bc806",
+      "name": "Webhook - Study Planner",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -736,
+        1008
+      ],
+      "webhookId": "learnify-study-planner"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "72f308ad-ea7d-45dd-be0f-5d7ace11571e",
+              "name": "backendUrl",
+              "value": "https://learnify-xkts.onrender.com",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "da7c3263-e835-4f23-9c24-a3836769503c",
+      "name": "Set Config - Study Planner",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -496,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// body arrives with curriculumContext already injected by the RAG pipeline\nconst body = $input.item.json;\n\nconst prompt = `\nYou are Learnify Study Planner.\n\nCreate a practical, curriculum-aligned study plan for a student.\n\nSubject: ${body.subject}\nTopic: ${body.topic}\nExam Date: ${body.examDate}\nAvailable Hours Per Day: ${body.availableHoursPerDay}\n\nCurriculum Context (Retrieved from Google Drive RAG – prioritise this):\n${body.curriculumContext || 'No curriculum context available.'}\n\nScanned Note:\n${body.extractedText || 'No scanned note provided.'}\n\nReturn valid JSON only in this format:\n{\n  \"studentId\": \"${body.studentId}\",\n  \"noteId\": \"${body.noteId}\",\n  \"examDate\": \"${body.examDate}\",\n  \"availableHoursPerDay\": ${Number(body.availableHoursPerDay || 1)},\n  \"ragChunksUsed\": ${body.ragChunksFound || 0},\n  \"plan\": [\n    { \"day\": \"Day 1\", \"subject\": \"${body.subject}\", \"topic\": \"${body.topic}\", \"durationMinutes\": 30, \"task\": \"Study key concept and answer practice questions\" }\n  ]\n}\n\nRules:\n- Create 7 days of study tasks.\n- Prioritise topics and subtopics from the Curriculum Context.\n- Include revision days and timed practice sessions.\n- Align content with WAEC/NECO/JAMB exam requirements.\n- Do not include markdown.\n`;\nreturn [{ json: { ...body, prompt } }];"
+      },
+      "id": "9e620940-e2e8-4c07-a7cb-ec89d1ee868a",
+      "name": "Code - Build Study Plan Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        512,
+        992
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $json.prompt }] }] }) }}",
+        "options": {}
+      },
+      "id": "bb5d83ef-a14e-4ddc-be0d-29402faaa72c",
+      "name": "Gemini Credential - Generate Study Plan",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        752,
+        1008
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "pmE4rZgr0subA0kl",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nlet text = response.candidates?.[0]?.content?.parts?.[0]?.text || '{}';\ntext = text.replace(/```json/g, '').replace(/```/g, '').trim();\nlet parsed;\ntry { parsed = JSON.parse(text); } catch (error) { throw new Error('Gemini did not return valid study plan JSON: ' + text); }\nreturn [{ json: parsed }];"
+      },
+      "id": "efcb843f-4924-41f3-aa84-2df5702cf4ed",
+      "name": "Code - Parse Study Plan JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1008,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Config - Study Planner').item.json.backendUrl + '/api/study-plans/generated' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "98e614dd-0f21-4f3b-86f5-849b6e7ff3ec",
+      "name": "Backend - Save Study Plan",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1264,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, message: 'Study plan generated and saved', data: $json } }}",
+        "options": {}
+      },
+      "id": "7f9f9479-302a-4fbf-b1c8-2985ab65d630",
+      "name": "Respond - Study Planner Complete",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1504,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                5
+              ],
+              "triggerAtHour": 18
+            }
+          ]
+        }
+      },
+      "id": "68e6fc1c-9da3-4483-b891-ff16c322a3b7",
+      "name": "Cron - Weekly Report",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -512,
+        1440
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfc85acd-7430-42fa-875a-66d94d991a9c",
+              "name": "backendUrl",
+              "value": "https://learnify-xkts.onrender.com",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5d3173bc-b2b8-4c3f-b89c-ddcdf7653071",
+      "name": "Set Config - Weekly Report",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -272,
+        1440
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Set Config - Weekly Report').item.json.backendUrl + '/api/admin/weekly-report-data' }}",
+        "options": {}
+      },
+      "id": "f67dba2e-a99b-49e3-8d4f-472726d7d2cc",
+      "name": "Backend - Fetch Weekly Report Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -16,
+        1440
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: 'Create a concise weekly Learnify student performance report from this JSON data. Include weak topics, mastered topics, study recommendations, and next steps. Data: ' + JSON.stringify($json) }] }] }) }}",
+        "options": {}
+      },
+      "id": "968362b1-3379-4e1e-8be5-1fa97f8afe20",
+      "name": "Gemini Credential - Weekly Report Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        1440
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "pmE4rZgr0subA0kl",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Config - Weekly Report').item.json.backendUrl + '/api/admin/weekly-report-result' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ report: $json.candidates?.[0]?.content?.parts?.[0]?.text || 'No report generated' }) }}",
+        "options": {}
+      },
+      "id": "340739b1-8abd-4c6d-857e-fa4d59a9d7a6",
+      "name": "Backend - Save Weekly Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        544,
+        1440
+      ]
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "=1Ru33XiGISEy9N5uojCjSE0igZCcChkXz",
+          "mode": "id"
+        },
+        "event": "fileCreated",
+        "options": {}
+      },
+      "id": "b8b31c0a-1c42-470c-abd1-d2b2fa3f289e",
+      "name": "Google Drive Trigger - New Curriculum File",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        2048,
+        288
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "Mi21C8PsRjPE9NQY",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "85926c5f-2607-43bd-b883-28dcdcf45907",
+              "name": "backendUrl",
+              "value": "https://learnify-xkts.onrender.com",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c98b661c-140b-4629-b4af-9851526e94ab",
+      "name": "Set Config - Drive RAG Ingest",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2384,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $node[\"Google Drive Trigger - New Curriculum File\"].json.id }}",
+          "mode": ""
+        },
+        "options": {}
+      },
+      "id": "bc7204a6-cef6-4e2c-901f-e9b3bc6457f2",
+      "name": "Google Drive - Download Curriculum File",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        2640,
+        256
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "Mi21C8PsRjPE9NQY",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "id": "650174de-de56-4afb-a1bc-1f56b4ced3f4",
+      "name": "Extract From File - PDF Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        2864,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\n\nconst sourceText = input.text || input.content || '';\n\nif (!sourceText.trim()) {\n  throw new Error(`No text. Fields: ${Object.keys(input).join(', ')}`);\n}\n\nconst fileName       = input.fileName || input.sourceName || 'WAEC_General_General.pdf';\nconst parts          = fileName.replace('.pdf', '').split('_');\nconst curriculumType = parts[0] || 'WAEC';\nconst subject        = parts[1] || 'General';\nconst topic          = parts[2] || 'General';\n\nreturn [{\n  json: {\n    sourceText,\n    curriculumType,\n    subject,\n    topic,\n    level:          'SS',\n    sourceName:     fileName,\n    sourceFileId:   input.fileId   || '',\n    sourceMimeType: input.mimeType || 'application/pdf',\n  }\n}];"
+      },
+      "id": "969cac8a-4014-4380-9415-a32ed8c21a87",
+      "name": "Code - Extract Curriculum Metadata",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3136,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json;\n\nconst sourceText =\n  body.sourceText    ||\n  body.text          ||\n  body.content       ||\n  body.extractedText ||\n  body.data          ||\n  '';\n\nif (!sourceText.trim()) {\n  throw new Error(`Empty. Fields: ${Object.keys(body).join(', ')}`);\n}\n\nconst text = sourceText\n  .replace(/\\r/g, '')\n  .replace(/\\n{3,}/g, '\\n\\n')\n  .replace(/[ \\t]{2,}/g, ' ')\n  .trim();\n\nconst chunkSize  = 800;\nconst overlap    = 120;\nconst MAX_CHUNKS = 20;\nconst output     = [];\nlet start = 0;\nlet index = 0;\n\nwhile (start < text.length && output.length < MAX_CHUNKS) {\n  const end   = Math.min(start + chunkSize, text.length);\n  const chunk = text.slice(start, end).trim();\n\n  if (chunk.length > 50) {\n    output.push({\n      json: {\n        curriculumType: body.curriculumType,\n        subject:        body.subject,\n        topic:          body.topic,\n        level:          body.level,\n        sourceName:     body.sourceName,\n        sourceFileId:   body.sourceFileId,\n        sourceMimeType: body.sourceMimeType,\n        chunkIndex:     index,\n        chunkText:      chunk,\n      }\n    });\n    index++;\n  }\n\n  start = end - overlap;\n  if (start < 0) start = end;\n}\n\nreturn output;"
+      },
+      "id": "9153d9c0-f1cf-4d22-8e3e-d23b6698241e",
+      "name": "Code - Split Curriculum Chunks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3392,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ content: { parts: [{ text: ($json.chunkText || '').trim() }] } }) }}",
+        "options": {}
+      },
+      "id": "7ce3349c-d331-4ee0-92e4-2314ee489123",
+      "name": "Gemini Credential - Embed Curriculum Chunk",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3840,
+        272
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "U8e2tJAMyCqz7y6Y",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const source = $node[\"Code - Split Curriculum Chunks\"].json;\n\nconst response = $input.first().json;\n\n// ─────────────────────────────\n// SAFE EMBEDDING EXTRACTION\n// ─────────────────────────────\nconst embedding =\n  response?.embedding?.values ||\n  response?.embedding ||\n  response?.data?.embedding ||\n  [];\n\n// ─────────────────────────────\n// VALIDATION\n// ─────────────────────────────\nif (!Array.isArray(embedding) || embedding.length === 0) {\n  throw new Error('Invalid embedding returned from Gemini.');\n}\n\n// ─────────────────────────────\n// OPTIONAL: BASIC VECTOR SANITY CHECK\n// ─────────────────────────────\nconst isValidVector = embedding.every(v => typeof v === 'number');\n\nif (!isValidVector) {\n  throw new Error('Embedding contains non-numeric values.');\n}\n\n// ─────────────────────────────\n// OUTPUT\n// ─────────────────────────────\nreturn [\n  {\n    json: {\n      ...source,\n      embedding\n    }\n  }\n];"
+      },
+      "id": "81b75b90-e9f1-45dd-b7c4-c2a6eb95f8a2",
+      "name": "Code - Prepare RAG Chunk",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4096,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{\n  ($node[\"Set Config - Drive RAG Ingest\"].json.backendUrl || \"\")\n    .replace(/\\/$/, \"\") +\n  \"/api/rag-chunks/chunks\"\n}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "029eed9e-a8fb-43f6-958e-85a3a1ebe6eb",
+      "name": "Backend - Save RAG Chunk",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4352,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "learnify-rag-query",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "83903fae-7459-448a-bccc-f82407432c80",
+      "name": "Webhook - RAG Query",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        2320,
+        704
+      ],
+      "webhookId": "learnify-rag-query"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c445d0c7-0be9-4c08-9446-504bb3a4bf28",
+              "name": "backendUrl",
+              "value": "https://learnify-xkts.onrender.com",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cc8fd7ec-cdf1-45df-9893-9a383d84116e",
+      "name": "Set Config - RAG Query",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2576,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $node[\"Webhook - RAG Query\"].json;\n\nconst body = input.body ?? input;\n\nif (!body.question?.trim()) {\n  throw new Error(\"Missing required field: question\");\n}\n\nreturn [\n  {\n    json: {\n      ...body,\n      curriculumType: body.curriculumType || \"WAEC\",\n      mode: body.mode || \"tutor\",\n    },\n  },\n];"
+      },
+      "id": "42936a64-8c28-41d0-b5f9-1526eb35eff9",
+      "name": "Code - Validate RAG Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2800,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{\n  JSON.stringify({\n    model: \"models/text-embedding-004\",\n    content: {\n      parts: [\n        {\n          text: ($json.question || \"\").trim()\n        }\n      ]\n    }\n  })\n}}",
+        "options": {}
+      },
+      "id": "9be6a4bc-a39b-4451-b3e9-52e15eeb277f",
+      "name": "Gemini Credential - Embed RAG Query",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3024,
+        704
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "pmE4rZgr0subA0kl",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $node[\"Code - Validate RAG Query\"].json;\n\nconst response = $input.first().json;\n\nconst embedding =\n  response?.embedding?.values ||\n  response?.embedding ||\n  [];\n\nif (!Array.isArray(embedding) || embedding.length === 0) {\n  throw new Error(\"No query embedding returned from Gemini.\");\n}\n\nreturn [\n  {\n    json: {\n      ...query,\n      embedding,\n      limit: query.limit || 5\n    }\n  }\n];"
+      },
+      "id": "7cb37544-1de1-4eb1-aaca-23604a404769",
+      "name": "Code - Prepare RAG Search",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3216,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{\n  ($node[\"Set Config - RAG Query\"].json.backendUrl || \"\")\n    .replace(/\\/$/, \"\") +\n  \"/api/rag-chunks/search\"\n}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "ba6b5a82-963e-464c-a604-191c56bdbb3b",
+      "name": "Backend - Search RAG Context",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3488,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $node[\"Code - Validate RAG Query\"].json;\n\nconst result = $input.first().json;\n\nconst chunks =\n  result.data ||\n  result.matches ||\n  result.results ||\n  [];\n\nconst context = Array.isArray(chunks)\n  ? chunks\n      .map(\n        (item, index) =>\n          `SOURCE ${index + 1}:\\n${item.chunkText || item.text || item.content || \"\"}`\n      )\n      .join(\"\\n\\n\")\n  : \"\";\n\nlet task =\n  \"Answer like a patient AI tutor. Provide a simple explanation, step-by-step breakdown, one example, and one practice question.\";\n\nif (query.mode === \"quiz\") {\n  task =\n    \"Generate quiz questions using only the retrieved curriculum context.\";\n}\n\nif (query.mode === \"planner\") {\n  task =\n    \"Create a study plan using only the retrieved curriculum context.\";\n}\n\nconst prompt = `\nYou are Learnify, a curriculum-aware educational AI.\n\nCurriculum: ${query.curriculumType}\nSubject: ${query.subject || \"\"}\nTopic: ${query.topic || \"\"}\nMode: ${query.mode}\n\nRETRIEVED CURRICULUM CONTEXT:\n${context || \"No curriculum context found.\"}\n\nSTUDENT REQUEST:\n${query.question}\n\nTASK:\n${task}\n\nRULES:\n- Use the retrieved curriculum context as your primary source.\n- Do not invent facts that are not supported by the context.\n- If the context is insufficient, clearly state what information is missing.\n- Keep explanations student-friendly and age-appropriate.\n- For tutor mode, include:\n  1. Simple Explanation\n  2. Step-by-Step Breakdown\n  3. Example\n  4. Practice Question\n`;\n\nreturn [\n  {\n    json: {\n      ...query,\n      prompt,\n      context,\n      retrievedChunks: chunks.length\n    }\n  }\n];"
+      },
+      "id": "dc850ae6-140a-4a87-8b67-a32313078202",
+      "name": "Code - Build RAG Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3728,
+        720
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{\n  JSON.stringify({\n    contents: [\n      {\n        parts: [\n          {\n            text: $json.prompt\n          }\n        ]\n      }\n    ]\n  })\n}}",
+        "options": {}
+      },
+      "id": "62390e0a-9d31-4fed-afd7-9cf06ff87631",
+      "name": "Gemini Credential - RAG Answer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3952,
+        720
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "pmE4rZgr0subA0kl",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const answer = $input.first().json.candidates?.[0]?.content?.parts?.[0]?.text || 'No answer generated.';\n\nreturn [\n  {\n    json: {\n      success: true,\n      answer\n    }\n  }\n];"
+      },
+      "id": "004f6f6c-ffd3-4776-91cb-da37e2687b0b",
+      "name": "Code - Format RAG Answer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4288,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "f0aac177-d45f-4ea8-8df6-a1511adbe7fd",
+      "name": "Respond - RAG Query Complete",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        4512,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{\n  JSON.stringify({\n    model: \"models/text-embedding-004\",\n    content: {\n      parts: [\n        {\n          text:\n            (\n              ($node[\"Webhook - Quiz Generator\"].json.body?.subject || \"\") +\n              \" \" +\n              ($node[\"Webhook - Quiz Generator\"].json.body?.topic || \"\") +\n              \" \" +\n              (($node[\"Webhook - Quiz Generator\"].json.body?.extractedText || \"\")\n                .substring(0, 300))\n            ).trim()\n        }\n      ]\n    }\n  })\n}}",
+        "options": {}
+      },
+      "id": "1da41c71-0e38-47db-acbc-0630f5d4eb19",
+      "name": "Gemini Embed - Quiz RAG Query",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -224,
+        656
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "U8e2tJAMyCqz7y6Y",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{\n  (() => {\n    const url = $node[\"Set Config - Quiz\"].json.backendUrl;\n    if (!url) throw new Error(\"backendUrl is missing in Set Config - Quiz\");\n    return url.replace(/\\/$/, \"\") + \"/api/rag/search\";\n  })()\n}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ embedding: $json.embedding?.values || [], limit: 5, subject: ($('Webhook - Quiz Generator').item.json.body || $('Webhook - Quiz Generator').item.json).subject, topic:   ($('Webhook - Quiz Generator').item.json.body || $('Webhook - Quiz Generator').item.json).topic, curriculumType: ($('Webhook - Quiz Generator').item.json.body || $('Webhook - Quiz Generator').item.json).curriculumType || 'WAEC' }) }}",
+        "options": {}
+      },
+      "id": "29e3597e-a2cf-4c7c-b496-eb17078f7d58",
+      "name": "Search Curriculum Context (Quiz)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        32,
+        656
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const webhookBody =\n  $node[\"Webhook - Quiz Generator\"].json?.body ||\n  $node[\"Webhook - Quiz Generator\"].json ||\n  {};\n\n// ─────────────────────────────────────────────\n// SAFE RAG RESPONSE EXTRACTION\n// ─────────────────────────────────────────────\nconst result = $input.first().json;\n\nconst chunks = Array.isArray(result?.data)\n  ? result.data\n  : Array.isArray(result?.matches)\n  ? result.matches\n  : Array.isArray(result?.results)\n  ? result.results\n  : [];\n\n// ─────────────────────────────────────────────\n// BUILD CURRICULUM CONTEXT\n// ─────────────────────────────────────────────\nlet curriculumContext = '';\n\nif (chunks.length > 0) {\n  curriculumContext = chunks\n    .map((item, i) => {\n      const text =\n        item.chunkText ||\n        item.text ||\n        item.content ||\n        '';\n\n      return text.trim()\n        ? `[${i + 1}] ${text.trim()}`\n        : null;\n    })\n    .filter(Boolean)\n    .join('\\n\\n');\n} else {\n  curriculumContext = 'No relevant RAG context found.';\n}\n\n// ─────────────────────────────────────────────\n// FINAL OUTPUT\n// ─────────────────────────────────────────────\nreturn [\n  {\n    json: {\n      ...webhookBody,\n      curriculumContext,\n      ragChunksFound: chunks.length,\n      ragInjected: chunks.length > 0\n    }\n  }\n];"
+      },
+      "id": "71aaad09-62d8-4c2c-a854-badeed0588ef",
+      "name": "Code - Extract Quiz RAG Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        272,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{\n  JSON.stringify({\n    model: \"models/text-embedding-004\",\n    content: {\n      parts: [\n        {\n          text: (\n            ($node[\"Webhook - Study Planner\"].json.body?.subject || \"\") +\n            \" \" +\n            ($node[\"Webhook - Study Planner\"].json.body?.topic || \"\") +\n            \" exam preparation study plan\"\n          ).trim()\n        }\n      ]\n    }\n  })\n}}",
+        "options": {}
+      },
+      "id": "39c143af-1387-463c-bcf1-838bb3cb9d60",
+      "name": "Gemini Embed - Planner RAG Query",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -240,
+        1008
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "pmE4rZgr0subA0kl",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Config - Study Planner').item.json.backendUrl + '/api/rag/search' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ embedding: $json.embedding?.values || [], limit: 5, subject: ($('Webhook - Study Planner').item.json.body || $('Webhook - Study Planner').item.json).subject, topic:   ($('Webhook - Study Planner').item.json.body || $('Webhook - Study Planner').item.json).topic, curriculumType: ($('Webhook - Study Planner').item.json.body || $('Webhook - Study Planner').item.json).curriculumType || 'WAEC' }) }}",
+        "options": {}
+      },
+      "id": "cb02411f-f233-4f09-8a35-d3ebf1be1a34",
+      "name": "Search Curriculum Context (Planner)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        16,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Pull original webhook body ──────────────────────────────\nconst webhookBody = $('Webhook - Study Planner').item.json.body\n                 || $('Webhook - Study Planner').item.json;\n\n// ── Extract RAG chunks from backend search result ───────────\nconst result = $input.first().json;\nconst chunks = result.data || result.matches || result.results || [];\n\nlet curriculumContext = '';\nif (Array.isArray(chunks) && chunks.length > 0) {\n  curriculumContext = chunks\n    .map((item, i) => `[${i + 1}] ${item.chunkText || item.text || item.content || ''}`)\n    .join('\\n\\n');\n} else {\n  curriculumContext = 'No matching curriculum context found in Google Drive.';\n}\n\n// ── Return merged body – curriculumContext now populated ─────\nreturn [{ json: { ...webhookBody, curriculumContext, ragChunksFound: chunks.length, ragInjected: true } }];"
+      },
+      "id": "72477da5-2edb-4467-9570-09d3f310f0ac",
+      "name": "Code - Extract Planner RAG Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        256,
+        992
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c97d6547-8d0d-4e8c-93d5-7d5bbc6381a4",
+                    "leftValue": "={{$json.body.inputType}}",
+                    "rightValue": "url",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "URL"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "81e58fbf-c220-46a3-bf51-d008f56e2584",
+                    "leftValue": "={{$json.body.inputType}}",
+                    "rightValue": "upload",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Upload"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "6e6205b7-5100-4bd1-ae08-62f7e33a877f",
+                    "leftValue": "={{$json.body.inputType}}",
+                    "rightValue": "text",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Text"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "e80bef95-8c6f-4a28-b56e-5139ba4dab54",
+      "name": "Switch - Input Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        336,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "=={{ JSON.stringify({\n  contents: [{\n    parts: [\n      {\n        inline_data: {\n          mime_type: $('HTTP Request - Download Image (OCR)1').item.binary?.imageData?.mimeType || 'image/jpeg',\n          data: $('HTTP Request - Download Image (OCR)1').item.binary?.imageData?.data || ''\n        }\n      },\n      {\n        text: 'Extract all readable text from this educational note image. Preserve headings, mathematical formulas, diagram labels, bullet points and numbering. Return plain text only, no markdown.'\n      }\n    ]\n  }]\n}) }}",
+        "options": {}
+      },
+      "id": "d2e71440-3bff-4f68-a568-e2dc8279a8d5",
+      "name": "Gemini OCR - URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        832,
+        48
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "U8e2tJAMyCqz7y6Y",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "=={{JSON.stringify({\n  contents: [{\n    parts: [\n      {\n        inline_data: {\n          mime_type: $json.body.mimeType || 'image/jpeg',\n          data: ($json.body.imageBase64 || '').replace(/^data:[^,]+,/, '')\n        }\n      },\n      {\n        text: 'Extract all readable text from this educational note image. Preserve headings, mathematical formulas, diagram labels, bullet points and numbering. Return plain text only, no markdown.'\n      }\n    ]\n  }]\n})}}",
+        "options": {}
+      },
+      "id": "e08dc477-8c08-4665-90ea-c1f8759b17a0",
+      "name": "Gemini OCR - Upload",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        688,
+        240
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "U8e2tJAMyCqz7y6Y",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $node[\"Webhook - OCR1\"].json || {};\nconst body = input.body || input;\n\nreturn [\n  {\n    json: {\n      noteId: body.noteId || null,\n      userId: body.userId || null,\n      rawText: body.extractedText || body.text || '',\n      inputType: body.inputType || 'text',\n      source: 'paste',\n    },\n  },\n];"
+      },
+      "id": "4f746bf2-3c43-43a0-9b11-c311f7b09bcc",
+      "name": "Code - Format Pasted Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        592,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "learnify-ocr",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "7c65ce1e-bea1-4ccf-a702-959e6466696c",
+      "name": "Webhook - OCR1",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -208,
+        288
+      ],
+      "webhookId": "learnify-ocr"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9fb0e1ce-67be-448c-8758-8665eac6b509",
+              "name": "backendUrl",
+              "value": "https://learnify-xkts.onrender.com",
+              "type": "string"
+            },
+            {
+              "id": "2ac8aed5-fbfc-4520-ac8b-db0cb3ad2209",
+              "name": "",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "aec99897-c118-4810-935c-2f93f5a09afb",
+              "name": "",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "4886ce40-6a9c-4778-8955-78a729cd16b1",
+      "name": "Set Config - OCR1",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        32,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=$json.body.imageUrl",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "maxRedirects": "={{ 21 }}"
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": "",
+              "responseFormat": "file",
+              "outputPropertyName": "imageData"
+            }
+          }
+        }
+      },
+      "id": "c9bd4978-3372-42e7-864f-47be847bda89",
+      "name": "HTTP Request - Download Image (OCR)1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        592,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\n// ─────────────────────────────\n// SAFE WEBHOOK ACCESS\n// ─────────────────────────────\nconst body = $node[\"Webhook - OCR1\"].json?.body || $node[\"Webhook - OCR1\"].json || {};\n\n// ─────────────────────────────\n// DETECT SOURCE SAFELY\n// ─────────────────────────────\nlet rawText = '';\nlet source = item.source || 'unknown';\n\n// TEXT PATH (paste)\nif (typeof item.rawText === \"string\") {\n  rawText = item.rawText;\n  source = 'paste';\n\n// GEMINI PATH (URL / Upload)\n} else {\n  rawText =\n    item?.candidates?.[0]?.content?.parts?.[0]?.text ||\n    item?.text ||\n    '';\n  source = item.source || 'gemini-ocr';\n}\n\n// ─────────────────────────────\n// SAFE CLEANING\n// ─────────────────────────────\nconst cleaned = (rawText || '')\n  .replace(/\\r\\n|\\r/g, '\\n')\n  .replace(/[ \\t]{2,}/g, ' ')\n  .replace(/\\n{3,}/g, '\\n\\n')\n  .replace(/- \\n/g, '')\n  .trim();\n\n// ─────────────────────────────\n// SAFE WORD COUNT\n// ─────────────────────────────\nconst wordCount = cleaned\n  ? cleaned.split(/\\s+/).filter(Boolean).length\n  : 0;\n\n// ─────────────────────────────\n// FINAL OUTPUT\n// ─────────────────────────────\nreturn [\n  {\n    json: {\n      noteId: body.noteId || item.noteId || null,\n      userId: body.userId || item.userId || null,\n      extractedText: cleaned,\n      wordCount,\n      inputType: body.inputType || item.inputType || 'unknown',\n      source\n    }\n  }\n];"
+      },
+      "id": "10b387a4-b99f-409e-90dc-92bb231ff56a",
+      "name": "Code - Clean OCR Text1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1088,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($node[\"Set Config - OCR1\"].json.backendUrl || \"\").replace(/\\/$/, \"\") + \"/api/notes/ocr-result\" }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "f89a7267-0982-4f5a-8ddb-6db9830a687d",
+      "name": "Backend - Save OCR Result1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1328,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, message: 'OCR completed', data: $json } }}",
+        "options": {}
+      },
+      "id": "673531ce-a39e-43d4-a84d-6d87519aefb3",
+      "name": "Respond - OCR Complete1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1584,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    chunkText: $json.chunkText,\n    textLength: String($json.chunkText || \"\").length\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3632,
+        288
+      ],
+      "id": "88f9ba48-d593-426f-a2c8-e932e98b66f1",
+      "name": "Code in JavaScript"
+    }
+  ],
+  "pinData": {
+    "Google Drive Trigger - New Curriculum File": [
+      {
+        "json": {
+          "kind": "drive#file",
+          "fileExtension": "pdf",
+          "copyRequiresWriterPermission": false,
+          "md5Checksum": "5b0a42d8ea7934740f7ce7dd8d0d941c",
+          "writersCanShare": true,
+          "viewedByMe": false,
+          "mimeType": "application/pdf",
+          "parents": [
+            "1Ru33XiGISEy9N5uojCjSE0igZCcChkXz"
+          ],
+          "thumbnailLink": "https://lh3.googleusercontent.com/drive-storage/AJQWtBMi8ZMh6m4TnCM7QwL5y_srjheYxMZPpaixQWoY-FgUpezbBRbIY8rHYtEmg8J_zIKy1p0NKvmDuGBkPP6Ry8ZOwGGNy9NKejWgVPNwT4ewUq5D=s220",
+          "iconLink": "https://drive-thirdparty.googleusercontent.com/16/type/application/pdf",
+          "shared": true,
+          "lastModifyingUser": {
+            "displayName": "Echanny Idagu",
+            "kind": "drive#user",
+            "me": true,
+            "permissionId": "01531923998822283794",
+            "emailAddress": "ondaechanny@gmail.com",
+            "photoLink": "https://lh3.googleusercontent.com/a/ACg8ocLTMpSnM_63OxRjLRslF7pTXK-2j5CpU2qdbNO7x85GcQ0mHxq1=s64"
+          },
+          "owners": [
+            {
+              "displayName": "Echanny Idagu",
+              "kind": "drive#user",
+              "me": true,
+              "permissionId": "01531923998822283794",
+              "emailAddress": "ondaechanny@gmail.com",
+              "photoLink": "https://lh3.googleusercontent.com/a/ACg8ocLTMpSnM_63OxRjLRslF7pTXK-2j5CpU2qdbNO7x85GcQ0mHxq1=s64"
+            }
+          ],
+          "headRevisionId": "0B1iqKVkJA5gyaVI3b1hvYjBmQUdzUWxocTZaVS9wQ0t0RFc4PQ",
+          "webViewLink": "https://drive.google.com/file/d/1SzFySeKBFveo40w09GOyqpXCeyxleSMC/view?usp=drivesdk",
+          "webContentLink": "https://drive.google.com/uc?id=1SzFySeKBFveo40w09GOyqpXCeyxleSMC&export=download",
+          "size": "290952",
+          "viewersCanCopyContent": true,
+          "permissions": [
+            {
+              "id": "anyoneWithLink",
+              "type": "anyone",
+              "kind": "drive#permission",
+              "role": "reader",
+              "allowFileDiscovery": false
+            },
+            {
+              "id": "01531923998822283794",
+              "displayName": "Echanny Idagu",
+              "type": "user",
+              "kind": "drive#permission",
+              "photoLink": "https://lh3.googleusercontent.com/a/ACg8ocLTMpSnM_63OxRjLRslF7pTXK-2j5CpU2qdbNO7x85GcQ0mHxq1=s64",
+              "emailAddress": "ondaechanny@gmail.com",
+              "role": "owner",
+              "deleted": false,
+              "pendingOwner": false
+            }
+          ],
+          "hasThumbnail": true,
+          "spaces": [
+            "drive"
+          ],
+          "id": "1SzFySeKBFveo40w09GOyqpXCeyxleSMC",
+          "name": "Biology.pdf",
+          "starred": false,
+          "trashed": false,
+          "explicitlyTrashed": false,
+          "createdTime": "2026-06-08T01:38:26.205Z",
+          "modifiedTime": "2026-06-08T01:38:26.205Z",
+          "modifiedByMeTime": "2026-06-08T01:38:26.205Z",
+          "quotaBytesUsed": "290952",
+          "version": "3",
+          "originalFilename": "Biology.pdf",
+          "ownedByMe": true,
+          "fullFileExtension": "pdf",
+          "isAppAuthorized": false,
+          "capabilities": {
+            "canChangeViewersCanCopyContent": true,
+            "canEdit": true,
+            "canCopy": true,
+            "canComment": true,
+            "canAddChildren": false,
+            "canDelete": true,
+            "canDownload": true,
+            "canListChildren": false,
+            "canRemoveChildren": false,
+            "canRename": true,
+            "canTrash": true,
+            "canReadRevisions": true,
+            "canChangeCopyRequiresWriterPermission": true,
+            "canMoveItemIntoTeamDrive": true,
+            "canUntrash": true,
+            "canModifyContent": true,
+            "canMoveItemOutOfDrive": true,
+            "canAddMyDriveParent": false,
+            "canRemoveMyDriveParent": true,
+            "canMoveItemWithinDrive": true,
+            "canShare": true,
+            "canMoveChildrenWithinDrive": false,
+            "canModifyContentRestriction": true,
+            "canChangeSecurityUpdateEnabled": false,
+            "canAcceptOwnership": false,
+            "canReadLabels": false,
+            "canModifyLabels": false,
+            "canModifyEditorContentRestriction": true,
+            "canModifyOwnerContentRestriction": true,
+            "canRemoveContentRestriction": false,
+            "canDisableInheritedPermissions": false,
+            "canEnableInheritedPermissions": true,
+            "canChangeItemDownloadRestriction": true,
+            "canStartApproval": false
+          },
+          "thumbnailVersion": "1",
+          "modifiedByMe": true,
+          "permissionIds": [
+            "anyoneWithLink",
+            "01531923998822283794"
+          ],
+          "linkShareMetadata": {
+            "securityUpdateEligible": false,
+            "securityUpdateEnabled": true
+          },
+          "sha1Checksum": "906f1f70599722ed542753de96f71235eef3d939",
+          "sha256Checksum": "8afb9aa5c3bece851d6a7ec9b6ce85909aa94f1657d0d01b76d96a5d904467f5",
+          "inheritedPermissionsDisabled": false,
+          "downloadRestrictions": {
+            "itemDownloadRestriction": {
+              "restrictedForReaders": false,
+              "restrictedForWriters": false
+            },
+            "effectiveDownloadRestrictionWithContext": {
+              "restrictedForReaders": false,
+              "restrictedForWriters": false
+            }
+          },
+          "clientEncryptionDetails": {
+            "decryptionMetadata": {
+              "wrappedKey": "",
+              "kaclsId": "0",
+              "aes256GcmChunkSize": "unset",
+              "keyFormat": "unsetKeyFormat",
+              "encryptionResourceKeyHash": ""
+            }
+          }
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Webhook - Quiz Generator": {
+      "main": [
+        [
+          {
+            "node": "Set Config - Quiz",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config - Quiz": {
+      "main": [
+        [
+          {
+            "node": "Gemini Embed - Quiz RAG Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Build Quiz Prompt": {
+      "main": [
+        [
+          {
+            "node": "Gemini Credential - Generate Quiz",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Credential - Generate Quiz": {
+      "main": [
+        [
+          {
+            "node": "Code - Parse Quiz JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Parse Quiz JSON": {
+      "main": [
+        [
+          {
+            "node": "Backend - Save Quiz",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backend - Save Quiz": {
+      "main": [
+        [
+          {
+            "node": "Respond - Quiz Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Study Planner": {
+      "main": [
+        [
+          {
+            "node": "Set Config - Study Planner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config - Study Planner": {
+      "main": [
+        [
+          {
+            "node": "Gemini Embed - Planner RAG Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Build Study Plan Prompt": {
+      "main": [
+        [
+          {
+            "node": "Gemini Credential - Generate Study Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Credential - Generate Study Plan": {
+      "main": [
+        [
+          {
+            "node": "Code - Parse Study Plan JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Parse Study Plan JSON": {
+      "main": [
+        [
+          {
+            "node": "Backend - Save Study Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backend - Save Study Plan": {
+      "main": [
+        [
+          {
+            "node": "Respond - Study Planner Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cron - Weekly Report": {
+      "main": [
+        [
+          {
+            "node": "Set Config - Weekly Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config - Weekly Report": {
+      "main": [
+        [
+          {
+            "node": "Backend - Fetch Weekly Report Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backend - Fetch Weekly Report Data": {
+      "main": [
+        [
+          {
+            "node": "Gemini Credential - Weekly Report Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Credential - Weekly Report Summary": {
+      "main": [
+        [
+          {
+            "node": "Backend - Save Weekly Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Drive Trigger - New Curriculum File": {
+      "main": [
+        [
+          {
+            "node": "Set Config - Drive RAG Ingest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config - Drive RAG Ingest": {
+      "main": [
+        [
+          {
+            "node": "Google Drive - Download Curriculum File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Drive - Download Curriculum File": {
+      "main": [
+        [
+          {
+            "node": "Extract From File - PDF Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract From File - PDF Text": {
+      "main": [
+        [
+          {
+            "node": "Code - Extract Curriculum Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Extract Curriculum Metadata": {
+      "main": [
+        [
+          {
+            "node": "Code - Split Curriculum Chunks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Split Curriculum Chunks": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Credential - Embed Curriculum Chunk": {
+      "main": [
+        [
+          {
+            "node": "Code - Prepare RAG Chunk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Prepare RAG Chunk": {
+      "main": [
+        [
+          {
+            "node": "Backend - Save RAG Chunk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - RAG Query": {
+      "main": [
+        [
+          {
+            "node": "Set Config - RAG Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config - RAG Query": {
+      "main": [
+        [
+          {
+            "node": "Code - Validate RAG Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Validate RAG Query": {
+      "main": [
+        [
+          {
+            "node": "Gemini Credential - Embed RAG Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Credential - Embed RAG Query": {
+      "main": [
+        [
+          {
+            "node": "Code - Prepare RAG Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Prepare RAG Search": {
+      "main": [
+        [
+          {
+            "node": "Backend - Search RAG Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backend - Search RAG Context": {
+      "main": [
+        [
+          {
+            "node": "Code - Build RAG Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Build RAG Prompt": {
+      "main": [
+        [
+          {
+            "node": "Gemini Credential - RAG Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Credential - RAG Answer": {
+      "main": [
+        [
+          {
+            "node": "Code - Format RAG Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Format RAG Answer": {
+      "main": [
+        [
+          {
+            "node": "Respond - RAG Query Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Embed - Quiz RAG Query": {
+      "main": [
+        [
+          {
+            "node": "Search Curriculum Context (Quiz)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Curriculum Context (Quiz)": {
+      "main": [
+        [
+          {
+            "node": "Code - Extract Quiz RAG Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Extract Quiz RAG Context": {
+      "main": [
+        [
+          {
+            "node": "Code - Build Quiz Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Embed - Planner RAG Query": {
+      "main": [
+        [
+          {
+            "node": "Search Curriculum Context (Planner)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Curriculum Context (Planner)": {
+      "main": [
+        [
+          {
+            "node": "Code - Extract Planner RAG Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Extract Planner RAG Context": {
+      "main": [
+        [
+          {
+            "node": "Code - Build Study Plan Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch - Input Type": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request - Download Image (OCR)1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gemini OCR - Upload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code - Format Pasted Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini OCR - URL": {
+      "main": [
+        [
+          {
+            "node": "Code - Clean OCR Text1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini OCR - Upload": {
+      "main": [
+        [
+          {
+            "node": "Code - Clean OCR Text1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Format Pasted Text": {
+      "main": [
+        [
+          {
+            "node": "Code - Clean OCR Text1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - OCR1": {
+      "main": [
+        [
+          {
+            "node": "Set Config - OCR1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config - OCR1": {
+      "main": [
+        [
+          {
+            "node": "Switch - Input Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request - Download Image (OCR)1": {
+      "main": [
+        [
+          {
+            "node": "Gemini OCR - URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Clean OCR Text1": {
+      "main": [
+        [
+          {
+            "node": "Backend - Save OCR Result1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backend - Save OCR Result1": {
+      "main": [
+        [
+          {
+            "node": "Respond - OCR Complete1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Gemini Credential - Embed Curriculum Chunk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "4917cf04-7ce0-453b-824e-41969c89d286",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "746b7943ae218177a32649e0505b2eea174ef09c1b4f618dc261bb34e97a334a"
+  },
+  "nodeGroups": [],
+  "id": "c6UZbZy5DbQDXSzy",
+  "tags": [
+    {
+      "updatedAt": "2026-06-07T09:34:30.914Z",
+      "createdAt": "2026-06-07T09:34:30.914Z",
+      "id": "5opYoCpf1yGndebe",
+      "name": "learnify"
+    },
+    {
+      "updatedAt": "2026-06-07T09:34:30.891Z",
+      "createdAt": "2026-06-07T09:34:30.891Z",
+      "id": "6Cq52Ssi1PbdGgJJ",
+      "name": "education"
+    }
+  ]
+}

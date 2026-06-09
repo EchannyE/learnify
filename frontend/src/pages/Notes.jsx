@@ -1,9 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import {
+  BookOpen,
+  Brain,
+  CalendarDays,
+  ChevronDown,
+  ChevronUp,
+  FileText,
+  Send,
+  X,
+} from "lucide-react";
 import api from "../api/axios";
-import OcrSuccessModal from "../components/OcrSuccessModal";
 import LoadingButton from "../components/LoadingButton";
-import useOcrActions from "../hooks/useOcrActions";
 import useOnlineStatus from "../hooks/useOnlineStatus";
 
 import {
@@ -20,6 +28,7 @@ import {
   formatNoteForDownload
 } from "../utils/downloadFile";
 
+/* ═══════════════════════════════════════════════════════════ */
 export default function Notes() {
   const { handleOcrAction } = useOcrActions();
   const isOnline = useOnlineStatus();
@@ -35,8 +44,10 @@ export default function Notes() {
     imageUrl: ""
   });
 
+  /* upload form */
+  const [form, setForm]           = useState({ title: "", subject: "", topic: "", imageUrl: "" });
   const [pastedText, setPastedText] = useState("");
-  const [file, setFile] = useState(null);
+  const [file, setFile]           = useState(null);
   const [fileError, setFileError] = useState("");
 
   const [notes, setNotes] = useState([]);
@@ -107,20 +118,31 @@ export default function Notes() {
   const submitNote = async (event) => {
     event.preventDefault();
 
-    if (!isOnline) return alert("Offline mode: cannot upload.");
-    if (!token) return alert("Login required.");
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [tMessages, tLoading]);
 
-    if (!form.imageUrl && !file && !pastedText) {
-      return alert("Provide file, image URL, or text.");
-    }
+  /* ── select note & reset panels ────────────────────────── */
+  const selectNote = (note) => {
+    setSelected(note);
+    setQResult(null);  setQPollMsg("");
+    setPResult(null);  setPPollMsg("");
+    setTMessages([]);
+    setActiveTab("quiz");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
-    if (fileError) return alert(fileError);
+  /* ── upload ─────────────────────────────────────────────── */
+  const submitNote = async (e) => {
+    e.preventDefault();
+    if (!token) return toast.error("You must be logged in to upload notes.");
+    if (!form.imageUrl && !file && !pastedText)
+      return toast.error("Please provide a file, image URL, or paste some text.");
+    if (fileError) return toast.error(fileError);
 
     try {
-      setLoading(true);
-
+      setUploading(true);
       let res;
-
       if (file) {
         const formData = new FormData();
 
@@ -136,12 +158,8 @@ export default function Notes() {
 
         res = await api.post("/notes", formData);
       } else {
-        res = await api.post("/notes", {
-          ...form,
-          extractedText: pastedText
-        });
+        res = await api.post("/notes", { ...form, extractedText: pastedText });
       }
-
       const note = res.data.data;
 
       setSavedNote(note);
@@ -162,7 +180,7 @@ export default function Notes() {
       console.error(error);
       alert("Upload failed.");
     } finally {
-      setLoading(false);
+      setUploading(false);
     }
   };
 
@@ -229,23 +247,74 @@ export default function Notes() {
         topic: note.topic,
         extra: `Status: ${note.status || "N/A"}`
       }
-    });
+    }, 3000);
+  };
 
-  const downloadNoteDocx = (note) =>
-    downloadDocx({
-      filename: note.title || "note",
-      title: "LEARNIFY NOTE",
-      content: formatNoteForDownload(note),
-      meta: {
-        subject: note.subject,
-        topic: note.topic
+  /* ── study plan generation ──────────────────────────────── */
+  const generatePlan = async (e) => {
+    e.preventDefault();
+    if (!selected) return;
+    try {
+      setPLoading(true);
+      setPResult(null);
+      setPPollMsg("Generating study plan with AI — please wait…");
+      const res = await api.post("/study-plans/generate", { noteId: selected._id, examDate, availableHoursPerDay: hours });
+      /* direct response contains plan (Gemini path) */
+      const plan = res.data?.data?.studyPlan || res.data?.data;
+      if (plan?.plan?.length) {
+        setPResult(plan);
+        setPPollMsg("");
+        toast.success("Study plan ready!");
+      } else {
+        /* n8n async path — fall back to polling */
+        pollForPlan(selected._id);
       }
-    });
+    } catch (err) {
+      setPPollMsg("");
+      toast.error(err?.response?.data?.message || "Failed to generate study plan. Please try again.");
+      setPLoading(false);
+    }
+  };
 
   useEffect(() => {
     return () => stopPolling();
   }, []);
 
+  /* ── tutor chat ─────────────────────────────────────────── */
+  const askTutor = async (e) => {
+    e.preventDefault();
+    if (!tQuestion.trim()) return;
+    const q = tQuestion;
+    setTMessages(prev => [...prev, { role: "user", text: q }]);
+    setTQuestion("");
+    try {
+      setTLoading(true);
+      const res = await api.post("/tutor/ask", {
+        subject: tSubject,
+        topic: tTopic || undefined,
+        question: q,
+        noteId: selected?._id,
+      });
+      const data = res.data.data;
+      setTMessages(prev => [...prev, { role: "ai", text: data.answer || data }]);
+    } catch (err) {
+      const msg = err?.response?.data?.message;
+      setTMessages(prev => [...prev, {
+        role: "error",
+        text: msg || "Something went wrong. Please check your connection and try again.",
+      }]);
+    } finally {
+      setTLoading(false);
+    }
+  };
+
+  /* ── download helpers ───────────────────────────────────── */
+  const dlNotePdf  = (n) => downloadPdf({ filename: n.title || "note", title: "LEARNIFY NOTE", content: formatNoteForDownload(n), meta: { subject: n.subject, topic: n.topic } });
+  const dlNoteDocx = (n) => downloadDocx({ filename: n.title || "note", title: "LEARNIFY NOTE", content: formatNoteForDownload(n), meta: { subject: n.subject, topic: n.topic } });
+
+  const inputCls = "w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm outline-none transition focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100";
+
+  /* ═══════════════════════════════════════════════════════ */
   return (
     <main className="mx-auto max-w-5xl px-6 py-10 space-y-8">
 
@@ -278,6 +347,11 @@ export default function Notes() {
                 {note.subject}
               </p>
             </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-600">Image URL <span className="text-slate-400 font-normal">(optional)</span></label>
+              <input className={inputCls} placeholder="https://..." value={form.imageUrl} onChange={e => setForm({ ...form, imageUrl: e.target.value })} />
+            </div>
+          </div>
 
             <div className="flex gap-3 text-sm">
               <button
