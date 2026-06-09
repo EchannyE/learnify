@@ -44,8 +44,8 @@ app.use("/api/rag-chunks", ragChunkRoutes);
 app.use(notFound);
 app.use(errorHandler);
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, "localhost", () => {
+app.listen(PORT,  () => {
   console.log(`Learnify server running on port ${PORT}`);
 });

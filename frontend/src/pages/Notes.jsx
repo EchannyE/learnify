@@ -1,17 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/axios";
-import useOnlineStatus from "../hooks/useOnlineStatus";
-import LoadingButton from "../components/LoadingButton";
 import OcrSuccessModal from "../components/OcrSuccessModal";
+import LoadingButton from "../components/LoadingButton";
 import useOcrActions from "../hooks/useOcrActions";
+import useOnlineStatus from "../hooks/useOnlineStatus";
 
 import {
   getOfflineItems,
-  saveOfflineItems,
   saveOfflineItem,
+  saveOfflineItems,
   deleteOfflineItem,
-  clearStore,
 } from "../utils/offlineDb";
 
 import {
@@ -28,6 +27,7 @@ export default function Notes() {
 
   const pollRef = useRef(null);
 
+  /* ================= STATE ================= */
   const [form, setForm] = useState({
     title: "",
     subject: "",
@@ -41,37 +41,56 @@ export default function Notes() {
 
   const [notes, setNotes] = useState([]);
   const [loading, setLoading] = useState(false);
-
   const [ocrModalOpen, setOcrModalOpen] = useState(false);
   const [savedNote, setSavedNote] = useState(null);
 
-  /* ================= FETCH NOTES ================= */
+  /* ================= FETCH NOTES (FIXED) ================= */
   const fetchNotes = async () => {
     try {
-      if (!token) return setNotes([]);
-
-      if (!isOnline) {
-        const offline = await getOfflineItems("notes");
-        setNotes(offline || []);
+      if (!token) {
+        setNotes([]);
         return;
       }
 
-      const res = await api.get("/notes");
-      const serverNotes = res.data?.data || [];
+      // ONLINE
+      if (isOnline) {
+        const res = await api.get("/notes");
 
-      setNotes(serverNotes);
-      await saveOfflineItems("notes", serverNotes);
+        // FIX: multiple backend response shapes
+        const serverNotes =
+          res?.data?.data ||
+          res?.data?.notes ||
+          res?.data ||
+          [];
+
+        if (Array.isArray(serverNotes)) {
+          setNotes(serverNotes);
+
+          // sync offline cache safely
+          await saveOfflineItems("notes", serverNotes);
+        } else {
+          console.warn("Invalid notes response:", res.data);
+          setNotes([]);
+        }
+
+        return;
+      }
+
+      // OFFLINE
+      const offlineNotes = await getOfflineItems("notes");
+      setNotes(Array.isArray(offlineNotes) ? offlineNotes : []);
     } catch (err) {
-      console.error(err);
-      const offline = await getOfflineItems("notes");
-      setNotes(offline || []);
+      console.error("fetchNotes error:", err);
+
+      const offlineNotes = await getOfflineItems("notes");
+      setNotes(Array.isArray(offlineNotes) ? offlineNotes : []);
     }
   };
 
   useEffect(() => {
     if (!token) return navigate("/login");
     fetchNotes();
-  }, [isOnline]);
+  }, [isOnline, token]);
 
   /* ================= POLLING ================= */
   const stopPolling = () => {
@@ -81,14 +100,14 @@ export default function Notes() {
     }
   };
 
-  const pollNoteStatus = (id) => {
+  const pollNoteStatus = (noteId) => {
     stopPolling();
 
     pollRef.current = setInterval(async () => {
       try {
-        const res = await api.get(`/notes/${id}`);
+        const res = await api.get(`/notes/${noteId}`);
 
-        if (res.data?.data?.status === "processed") {
+        if (res?.data?.data?.status === "processed") {
           stopPolling();
           fetchNotes();
         }
@@ -102,15 +121,16 @@ export default function Notes() {
     return () => stopPolling();
   }, []);
 
-  /* ================= SUBMIT NOTE ================= */
-  const submitNote = async (e) => {
-    e.preventDefault();
+  /* ================= SUBMIT NOTE (FIXED DISPLAY BUG) ================= */
+  const submitNote = async (event) => {
+    event.preventDefault();
 
-    if (!token) return alert("Login required");
+    if (!isOnline) return alert("Offline mode: cannot upload.");
+    if (!token) return alert("Login required.");
+
     if (!form.imageUrl && !file && !pastedText) {
-      return alert("Provide file, image URL, or text");
+      return alert("Provide file, image URL, or text.");
     }
-    if (fileError) return alert(fileError);
 
     try {
       setLoading(true);
@@ -119,7 +139,6 @@ export default function Notes() {
 
       if (file) {
         const formData = new FormData();
-
         Object.entries(form).forEach(([k, v]) =>
           formData.append(k, v)
         );
@@ -138,13 +157,17 @@ export default function Notes() {
         });
       }
 
-      const note = res.data?.data;
+      const note = res?.data?.data;
 
       setSavedNote(note);
       await saveOfflineItem("notes", note);
       setOcrModalOpen(true);
 
-      await fetchNotes();
+      /* 🔥 FIX: instantly show new note */
+      setNotes((prev) => [note, ...prev]);
+
+      // background sync
+      fetchNotes();
 
       if (note?.status !== "processed") {
         pollNoteStatus(note._id);
@@ -156,46 +179,9 @@ export default function Notes() {
       setFileError("");
     } catch (err) {
       console.error(err);
-      alert("Upload failed");
+      alert("Upload failed.");
     } finally {
       setLoading(false);
-    }
-  };
-
-  /* ================= DELETE ================= */
-  const deleteNote = async (id) => {
-    const ok = window.confirm("Delete this note?");
-    if (!ok) return;
-
-    try {
-      if (isOnline && token) {
-        await api.delete(`/notes/${id}`);
-      }
-
-      await deleteOfflineItem("notes", id);
-
-      setNotes((prev) => prev.filter((n) => n._id !== id));
-    } catch (err) {
-      console.error(err);
-      alert("Delete failed");
-    }
-  };
-
-  /* ================= CLEAR ALL ================= */
-  const clearAllNotes = async () => {
-    const ok = window.confirm("Delete ALL notes?");
-    if (!ok) return;
-
-    try {
-      if (isOnline && token) {
-        await api.delete("/notes");
-      }
-
-      await clearStore("notes");
-      setNotes([]);
-    } catch (err) {
-      console.error(err);
-      alert("Failed to clear notes");
     }
   };
 
@@ -208,6 +194,7 @@ export default function Notes() {
       meta: {
         subject: note.subject,
         topic: note.topic,
+        extra: `Status: ${note.status || "N/A"}`,
       },
     });
 
@@ -226,24 +213,15 @@ export default function Notes() {
   return (
     <main className="mx-auto max-w-5xl px-6 py-10 space-y-8">
 
-      {/* HEADER */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">My Notes</h1>
+      {/* SCAN FORM */}
+      <form
+        onSubmit={submitNote}
+        className="rounded-2xl border bg-white p-5 space-y-4"
+      >
+        <h2 className="text-lg font-semibold">Scan / Upload Note</h2>
 
-        {notes.length > 0 && (
-          <button
-            onClick={clearAllNotes}
-            className="rounded-lg bg-red-500 px-4 py-2 text-white text-sm"
-          >
-            Clear All
-          </button>
-        )}
-      </div>
-
-      {/* FORM */}
-      <form onSubmit={submitNote} className="space-y-3">
         <input
-          className="input"
+          className="w-full border p-3 rounded-xl"
           placeholder="Title"
           value={form.title}
           onChange={(e) =>
@@ -252,7 +230,7 @@ export default function Notes() {
         />
 
         <input
-          className="input"
+          className="w-full border p-3 rounded-xl"
           placeholder="Subject"
           value={form.subject}
           onChange={(e) =>
@@ -260,15 +238,47 @@ export default function Notes() {
           }
         />
 
-        <textarea
-          className="input"
-          placeholder="Paste text"
-          value={pastedText}
-          onChange={(e) => setPastedText(e.target.value)}
+        <input
+          className="w-full border p-3 rounded-xl"
+          placeholder="Topic"
+          value={form.topic}
+          onChange={(e) =>
+            setForm({ ...form, topic: e.target.value })
+          }
         />
 
-        <LoadingButton loading={loading} type="submit">
-          Upload Note
+        <input
+          className="w-full border p-3 rounded-xl"
+          placeholder="Image URL"
+          value={form.imageUrl}
+          onChange={(e) =>
+            setForm({ ...form, imageUrl: e.target.value })
+          }
+        />
+
+        <input
+          type="file"
+          onChange={(e) =>
+            setFile(e.target.files?.[0] || null)
+          }
+        />
+
+        <textarea
+          className="w-full border p-3 rounded-xl"
+          placeholder="Paste text..."
+          value={pastedText}
+          onChange={(e) =>
+            setPastedText(e.target.value)
+          }
+        />
+
+        <LoadingButton
+          loading={loading}
+          loadingText="Scanning..."
+          className="bg-blue-600 text-white px-5 py-2 rounded-xl"
+          type="submit"
+        >
+          Scan Note
         </LoadingButton>
       </form>
 
@@ -280,7 +290,9 @@ export default function Notes() {
             className="flex justify-between border p-4 rounded-xl"
           >
             <div>
-              <h3 className="font-semibold">{note.title}</h3>
+              <h3 className="font-semibold">
+                {note.title}
+              </h3>
               <p className="text-sm text-gray-500">
                 {note.subject}
               </p>
@@ -288,39 +300,39 @@ export default function Notes() {
 
             <div className="flex gap-3 text-sm">
               <button
-                onClick={() => downloadNotePdf(note)}
+                onClick={() =>
+                  downloadNotePdf(note)
+                }
                 className="text-blue-600"
               >
                 PDF
               </button>
 
               <button
-                onClick={() => downloadNoteDocx(note)}
+                onClick={() =>
+                  downloadNoteDocx(note)
+                }
                 className="text-green-600"
               >
                 DOCX
-              </button>
-
-              <button
-                onClick={() => deleteNote(note._id)}
-                className="text-red-500"
-              >
-                Delete
               </button>
             </div>
           </div>
         ))}
       </div>
 
-      {/* MODAL */}
+      {/* OCR MODAL */}
       <OcrSuccessModal
         open={ocrModalOpen}
-        onClose={() => setOcrModalOpen(false)}
+        onClose={() =>
+          setOcrModalOpen(false)
+        }
         onSelect={(action) =>
           handleOcrAction({
             action,
             noteId: savedNote?._id,
-            disabled: savedNote?.status !== "processed",
+            disabled:
+              savedNote?.status !== "processed",
           })
         }
       />
