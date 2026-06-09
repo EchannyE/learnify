@@ -1,34 +1,25 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  BookOpen,
-  Brain,
-  CalendarDays,
-  ChevronDown,
-  ChevronUp,
-  FileText,
-  Send,
-  X,
-} from "lucide-react";
 import api from "../api/axios";
-import LoadingButton from "../components/LoadingButton";
 import useOnlineStatus from "../hooks/useOnlineStatus";
+import LoadingButton from "../components/LoadingButton";
+import OcrSuccessModal from "../components/OcrSuccessModal";
+import useOcrActions from "../hooks/useOcrActions";
 
 import {
   getOfflineItems,
-  saveOfflineItem,
   saveOfflineItems,
+  saveOfflineItem,
   deleteOfflineItem,
-  clearStore
+  clearStore,
 } from "../utils/offlineDb";
 
 import {
   downloadPdf,
   downloadDocx,
-  formatNoteForDownload
+  formatNoteForDownload,
 } from "../utils/downloadFile";
 
-/* ═══════════════════════════════════════════════════════════ */
 export default function Notes() {
   const { handleOcrAction } = useOcrActions();
   const isOnline = useOnlineStatus();
@@ -41,53 +32,48 @@ export default function Notes() {
     title: "",
     subject: "",
     topic: "",
-    imageUrl: ""
+    imageUrl: "",
   });
 
-  /* upload form */
-  const [form, setForm]           = useState({ title: "", subject: "", topic: "", imageUrl: "" });
   const [pastedText, setPastedText] = useState("");
-  const [file, setFile]           = useState(null);
+  const [file, setFile] = useState(null);
   const [fileError, setFileError] = useState("");
 
   const [notes, setNotes] = useState([]);
   const [loading, setLoading] = useState(false);
+
   const [ocrModalOpen, setOcrModalOpen] = useState(false);
   const [savedNote, setSavedNote] = useState(null);
 
-  /**
-   * FETCH NOTES (ONLINE + OFFLINE)
-   */
+  /* ================= FETCH NOTES ================= */
   const fetchNotes = async () => {
     try {
+      if (!token) return setNotes([]);
+
       if (!isOnline) {
-        const offlineNotes = await getOfflineItems("notes");
-        setNotes(offlineNotes || []);
+        const offline = await getOfflineItems("notes");
+        setNotes(offline || []);
         return;
       }
 
-      if (!token) return setNotes([]);
-
       const res = await api.get("/notes");
-      const serverNotes = res.data.data || [];
+      const serverNotes = res.data?.data || [];
 
       setNotes(serverNotes);
       await saveOfflineItems("notes", serverNotes);
-    } catch (error) {
-      console.error(error);
-      const offlineNotes = await getOfflineItems("notes");
-      setNotes(offlineNotes || []);
+    } catch (err) {
+      console.error(err);
+      const offline = await getOfflineItems("notes");
+      setNotes(offline || []);
     }
   };
 
   useEffect(() => {
     if (!token) return navigate("/login");
     fetchNotes();
-  }, [isOnline, token]);
+  }, [isOnline]);
 
-  /**
-   * POLLING
-   */
+  /* ================= POLLING ================= */
   const stopPolling = () => {
     if (pollRef.current) {
       clearInterval(pollRef.current);
@@ -95,14 +81,14 @@ export default function Notes() {
     }
   };
 
-  const pollNoteStatus = (noteId) => {
+  const pollNoteStatus = (id) => {
     stopPolling();
 
     pollRef.current = setInterval(async () => {
       try {
-        const res = await api.get(`/notes/${noteId}`);
+        const res = await api.get(`/notes/${id}`);
 
-        if (res.data.data.status === "processed") {
+        if (res.data?.data?.status === "processed") {
           stopPolling();
           fetchNotes();
         }
@@ -112,37 +98,25 @@ export default function Notes() {
     }, 4000);
   };
 
-  /**
-   * SUBMIT NOTE
-   */
-  const submitNote = async (event) => {
-    event.preventDefault();
-
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [tMessages, tLoading]);
+    return () => stopPolling();
+  }, []);
 
-  /* ── select note & reset panels ────────────────────────── */
-  const selectNote = (note) => {
-    setSelected(note);
-    setQResult(null);  setQPollMsg("");
-    setPResult(null);  setPPollMsg("");
-    setTMessages([]);
-    setActiveTab("quiz");
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  /* ── upload ─────────────────────────────────────────────── */
+  /* ================= SUBMIT NOTE ================= */
   const submitNote = async (e) => {
     e.preventDefault();
-    if (!token) return toast.error("You must be logged in to upload notes.");
-    if (!form.imageUrl && !file && !pastedText)
-      return toast.error("Please provide a file, image URL, or paste some text.");
-    if (fileError) return toast.error(fileError);
+
+    if (!token) return alert("Login required");
+    if (!form.imageUrl && !file && !pastedText) {
+      return alert("Provide file, image URL, or text");
+    }
+    if (fileError) return alert(fileError);
 
     try {
-      setUploading(true);
+      setLoading(true);
+
       let res;
+
       if (file) {
         const formData = new FormData();
 
@@ -158,9 +132,13 @@ export default function Notes() {
 
         res = await api.post("/notes", formData);
       } else {
-        res = await api.post("/notes", { ...form, extractedText: pastedText });
+        res = await api.post("/notes", {
+          ...form,
+          extractedText: pastedText,
+        });
       }
-      const note = res.data.data;
+
+      const note = res.data?.data;
 
       setSavedNote(note);
       await saveOfflineItem("notes", note);
@@ -168,7 +146,7 @@ export default function Notes() {
 
       await fetchNotes();
 
-      if (note.status !== "processed") {
+      if (note?.status !== "processed") {
         pollNoteStatus(note._id);
       }
 
@@ -176,49 +154,37 @@ export default function Notes() {
       setPastedText("");
       setFile(null);
       setFileError("");
-    } catch (error) {
-      console.error(error);
-      alert("Upload failed.");
+    } catch (err) {
+      console.error(err);
+      alert("Upload failed");
     } finally {
-      setUploading(false);
+      setLoading(false);
     }
   };
 
-  /**
-   * DELETE SINGLE NOTE
-   */
-  const deleteNote = async (noteId) => {
-    const confirmDelete = window.confirm(
-      "Delete this note permanently?"
-    );
-
-    if (!confirmDelete) return;
+  /* ================= DELETE ================= */
+  const deleteNote = async (id) => {
+    const ok = window.confirm("Delete this note?");
+    if (!ok) return;
 
     try {
       if (isOnline && token) {
-        await api.delete(`/notes/${noteId}`);
+        await api.delete(`/notes/${id}`);
       }
 
-      await deleteOfflineItem("notes", noteId);
+      await deleteOfflineItem("notes", id);
 
-      setNotes((prev) =>
-        prev.filter((n) => n._id !== noteId)
-      );
-    } catch (error) {
-      console.error(error);
-      alert("Failed to delete note.");
+      setNotes((prev) => prev.filter((n) => n._id !== id));
+    } catch (err) {
+      console.error(err);
+      alert("Delete failed");
     }
   };
 
-  /**
-   * CLEAR ALL NOTES
-   */
+  /* ================= CLEAR ALL ================= */
   const clearAllNotes = async () => {
-    const confirmClear = window.confirm(
-      "This will delete ALL notes. Continue?"
-    );
-
-    if (!confirmClear) return;
+    const ok = window.confirm("Delete ALL notes?");
+    if (!ok) return;
 
     try {
       if (isOnline && token) {
@@ -226,17 +192,14 @@ export default function Notes() {
       }
 
       await clearStore("notes");
-
       setNotes([]);
-    } catch (error) {
-      console.error(error);
-      alert("Failed to clear notes.");
+    } catch (err) {
+      console.error(err);
+      alert("Failed to clear notes");
     }
   };
 
-  /**
-   * DOWNLOADS
-   */
+  /* ================= DOWNLOAD ================= */
   const downloadNotePdf = (note) =>
     downloadPdf({
       filename: note.title || "note",
@@ -245,113 +208,83 @@ export default function Notes() {
       meta: {
         subject: note.subject,
         topic: note.topic,
-        extra: `Status: ${note.status || "N/A"}`
-      }
-    }, 3000);
-  };
+      },
+    });
 
-  /* ── study plan generation ──────────────────────────────── */
-  const generatePlan = async (e) => {
-    e.preventDefault();
-    if (!selected) return;
-    try {
-      setPLoading(true);
-      setPResult(null);
-      setPPollMsg("Generating study plan with AI — please wait…");
-      const res = await api.post("/study-plans/generate", { noteId: selected._id, examDate, availableHoursPerDay: hours });
-      /* direct response contains plan (Gemini path) */
-      const plan = res.data?.data?.studyPlan || res.data?.data;
-      if (plan?.plan?.length) {
-        setPResult(plan);
-        setPPollMsg("");
-        toast.success("Study plan ready!");
-      } else {
-        /* n8n async path — fall back to polling */
-        pollForPlan(selected._id);
-      }
-    } catch (err) {
-      setPPollMsg("");
-      toast.error(err?.response?.data?.message || "Failed to generate study plan. Please try again.");
-      setPLoading(false);
-    }
-  };
+  const downloadNoteDocx = (note) =>
+    downloadDocx({
+      filename: note.title || "note",
+      title: "LEARNIFY NOTE",
+      content: formatNoteForDownload(note),
+      meta: {
+        subject: note.subject,
+        topic: note.topic,
+      },
+    });
 
-  useEffect(() => {
-    return () => stopPolling();
-  }, []);
-
-  /* ── tutor chat ─────────────────────────────────────────── */
-  const askTutor = async (e) => {
-    e.preventDefault();
-    if (!tQuestion.trim()) return;
-    const q = tQuestion;
-    setTMessages(prev => [...prev, { role: "user", text: q }]);
-    setTQuestion("");
-    try {
-      setTLoading(true);
-      const res = await api.post("/tutor/ask", {
-        subject: tSubject,
-        topic: tTopic || undefined,
-        question: q,
-        noteId: selected?._id,
-      });
-      const data = res.data.data;
-      setTMessages(prev => [...prev, { role: "ai", text: data.answer || data }]);
-    } catch (err) {
-      const msg = err?.response?.data?.message;
-      setTMessages(prev => [...prev, {
-        role: "error",
-        text: msg || "Something went wrong. Please check your connection and try again.",
-      }]);
-    } finally {
-      setTLoading(false);
-    }
-  };
-
-  /* ── download helpers ───────────────────────────────────── */
-  const dlNotePdf  = (n) => downloadPdf({ filename: n.title || "note", title: "LEARNIFY NOTE", content: formatNoteForDownload(n), meta: { subject: n.subject, topic: n.topic } });
-  const dlNoteDocx = (n) => downloadDocx({ filename: n.title || "note", title: "LEARNIFY NOTE", content: formatNoteForDownload(n), meta: { subject: n.subject, topic: n.topic } });
-
-  const inputCls = "w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm outline-none transition focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100";
-
-  /* ═══════════════════════════════════════════════════════ */
+  /* ================= UI ================= */
   return (
     <main className="mx-auto max-w-5xl px-6 py-10 space-y-8">
 
-      {/* HEADER ACTIONS */}
+      {/* HEADER */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">My Notes</h1>
 
         {notes.length > 0 && (
           <button
             onClick={clearAllNotes}
-            className="rounded-lg bg-red-500 px-4 py-2 text-sm font-semibold text-white hover:bg-red-600"
+            className="rounded-lg bg-red-500 px-4 py-2 text-white text-sm"
           >
             Clear All
           </button>
         )}
       </div>
 
+      {/* FORM */}
+      <form onSubmit={submitNote} className="space-y-3">
+        <input
+          className="input"
+          placeholder="Title"
+          value={form.title}
+          onChange={(e) =>
+            setForm({ ...form, title: e.target.value })
+          }
+        />
+
+        <input
+          className="input"
+          placeholder="Subject"
+          value={form.subject}
+          onChange={(e) =>
+            setForm({ ...form, subject: e.target.value })
+          }
+        />
+
+        <textarea
+          className="input"
+          placeholder="Paste text"
+          value={pastedText}
+          onChange={(e) => setPastedText(e.target.value)}
+        />
+
+        <LoadingButton loading={loading} type="submit">
+          Upload Note
+        </LoadingButton>
+      </form>
+
       {/* NOTES LIST */}
       <div className="space-y-4">
         {notes.map((note) => (
           <div
             key={note._id}
-            className="flex items-center justify-between rounded-xl border p-4"
+            className="flex justify-between border p-4 rounded-xl"
           >
             <div>
-              <h3 className="font-semibold">
-                {note.title}
-              </h3>
+              <h3 className="font-semibold">{note.title}</h3>
               <p className="text-sm text-gray-500">
                 {note.subject}
               </p>
             </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-600">Image URL <span className="text-slate-400 font-normal">(optional)</span></label>
-              <input className={inputCls} placeholder="https://..." value={form.imageUrl} onChange={e => setForm({ ...form, imageUrl: e.target.value })} />
-            </div>
-          </div>
 
             <div className="flex gap-3 text-sm">
               <button
@@ -379,7 +312,7 @@ export default function Notes() {
         ))}
       </div>
 
-      {/* OCR MODAL */}
+      {/* MODAL */}
       <OcrSuccessModal
         open={ocrModalOpen}
         onClose={() => setOcrModalOpen(false)}
@@ -387,11 +320,10 @@ export default function Notes() {
           handleOcrAction({
             action,
             noteId: savedNote?._id,
-            disabled: savedNote?.status !== "processed"
+            disabled: savedNote?.status !== "processed",
           })
         }
       />
-
     </main>
   );
 }
