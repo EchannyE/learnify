@@ -5,11 +5,15 @@ import OcrSuccessModal from "../components/OcrSuccessModal";
 import LoadingButton from "../components/LoadingButton";
 import useOcrActions from "../hooks/useOcrActions";
 import useOnlineStatus from "../hooks/useOnlineStatus";
+
 import {
   getOfflineItems,
   saveOfflineItem,
-  saveOfflineItems
+  saveOfflineItems,
+  deleteOfflineItem,
+  clearStore
 } from "../utils/offlineDb";
+
 import {
   downloadPdf,
   downloadDocx,
@@ -40,11 +44,14 @@ export default function Notes() {
   const [ocrModalOpen, setOcrModalOpen] = useState(false);
   const [savedNote, setSavedNote] = useState(null);
 
+  /**
+   * FETCH NOTES (ONLINE + OFFLINE)
+   */
   const fetchNotes = async () => {
     try {
       if (!isOnline) {
         const offlineNotes = await getOfflineItems("notes");
-        setNotes(offlineNotes);
+        setNotes(offlineNotes || []);
         return;
       }
 
@@ -55,9 +62,10 @@ export default function Notes() {
 
       setNotes(serverNotes);
       await saveOfflineItems("notes", serverNotes);
-    } catch {
+    } catch (error) {
+      console.error(error);
       const offlineNotes = await getOfflineItems("notes");
-      setNotes(offlineNotes);
+      setNotes(offlineNotes || []);
     }
   };
 
@@ -66,6 +74,9 @@ export default function Notes() {
     fetchNotes();
   }, [isOnline, token]);
 
+  /**
+   * POLLING
+   */
   const stopPolling = () => {
     if (pollRef.current) {
       clearInterval(pollRef.current);
@@ -90,6 +101,9 @@ export default function Notes() {
     }, 4000);
   };
 
+  /**
+   * SUBMIT NOTE
+   */
   const submitNote = async (event) => {
     event.preventDefault();
 
@@ -109,8 +123,15 @@ export default function Notes() {
 
       if (file) {
         const formData = new FormData();
-        Object.entries(form).forEach(([k, v]) => formData.append(k, v));
-        if (pastedText) formData.append("extractedText", pastedText);
+
+        Object.entries(form).forEach(([k, v]) =>
+          formData.append(k, v)
+        );
+
+        if (pastedText) {
+          formData.append("extractedText", pastedText);
+        }
+
         formData.append("noteFile", file);
 
         res = await api.post("/notes", formData);
@@ -137,13 +158,67 @@ export default function Notes() {
       setPastedText("");
       setFile(null);
       setFileError("");
-    } catch {
+    } catch (error) {
+      console.error(error);
       alert("Upload failed.");
     } finally {
       setLoading(false);
     }
   };
 
+  /**
+   * DELETE SINGLE NOTE
+   */
+  const deleteNote = async (noteId) => {
+    const confirmDelete = window.confirm(
+      "Delete this note permanently?"
+    );
+
+    if (!confirmDelete) return;
+
+    try {
+      if (isOnline && token) {
+        await api.delete(`/notes/${noteId}`);
+      }
+
+      await deleteOfflineItem("notes", noteId);
+
+      setNotes((prev) =>
+        prev.filter((n) => n._id !== noteId)
+      );
+    } catch (error) {
+      console.error(error);
+      alert("Failed to delete note.");
+    }
+  };
+
+  /**
+   * CLEAR ALL NOTES
+   */
+  const clearAllNotes = async () => {
+    const confirmClear = window.confirm(
+      "This will delete ALL notes. Continue?"
+    );
+
+    if (!confirmClear) return;
+
+    try {
+      if (isOnline && token) {
+        await api.delete("/notes");
+      }
+
+      await clearStore("notes");
+
+      setNotes([]);
+    } catch (error) {
+      console.error(error);
+      alert("Failed to clear notes.");
+    }
+  };
+
+  /**
+   * DOWNLOADS
+   */
   const downloadNotePdf = (note) =>
     downloadPdf({
       filename: note.title || "note",
@@ -173,8 +248,64 @@ export default function Notes() {
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-10 space-y-8">
-      {/* unchanged UI (same as yours) */}
 
+      {/* HEADER ACTIONS */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">My Notes</h1>
+
+        {notes.length > 0 && (
+          <button
+            onClick={clearAllNotes}
+            className="rounded-lg bg-red-500 px-4 py-2 text-sm font-semibold text-white hover:bg-red-600"
+          >
+            Clear All
+          </button>
+        )}
+      </div>
+
+      {/* NOTES LIST */}
+      <div className="space-y-4">
+        {notes.map((note) => (
+          <div
+            key={note._id}
+            className="flex items-center justify-between rounded-xl border p-4"
+          >
+            <div>
+              <h3 className="font-semibold">
+                {note.title}
+              </h3>
+              <p className="text-sm text-gray-500">
+                {note.subject}
+              </p>
+            </div>
+
+            <div className="flex gap-3 text-sm">
+              <button
+                onClick={() => downloadNotePdf(note)}
+                className="text-blue-600"
+              >
+                PDF
+              </button>
+
+              <button
+                onClick={() => downloadNoteDocx(note)}
+                className="text-green-600"
+              >
+                DOCX
+              </button>
+
+              <button
+                onClick={() => deleteNote(note._id)}
+                className="text-red-500"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* OCR MODAL */}
       <OcrSuccessModal
         open={ocrModalOpen}
         onClose={() => setOcrModalOpen(false)}
@@ -186,6 +317,7 @@ export default function Notes() {
           })
         }
       />
+
     </main>
   );
 }
