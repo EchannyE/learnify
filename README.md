@@ -1,4 +1,4 @@
-# Learnify — AI-Powered Exam Prep for West African Students
+# Learnify — AI-Powered Study Campanion and Exam Prep for West African Students
 
 > Built for The Artificial Future Hackathon · YPIT · Lagos, May 30 – June 13, 2026
 
