@@ -1,37 +1,36 @@
-import { askTutor } from "../services/tutor.service.js";
-import { successResponse, errorResponse } from "../utils/apiResponse.js";
+import { askTutor } from "../services/tutorService.js";
 
-export const tutorChat = async (req, res) => {
+// POST /api/tutor/ask
+export const ask = async (req, res) => {
   try {
-    const { noteId, question, subject, topic } = req.body;
-
-    // 1. VALIDATION (IMPORTANT)
-    if (!question || !subject) {
-      return errorResponse(res, "Question and subject are required", 400);
-    }
-
-    // 2. CALL SERVICE
-    const result = await askTutor({
-      studentId: req.user._id,
-      noteId,
+    const {
       question,
       subject,
-      topic
+      topic,
+      noteId,
+      curriculumType,   // frontend must send this
+      curriculum,       // fallback if frontend sends old field name
+    } = req.body;
+
+    if (!question?.trim()) {
+      return res.status(400).json({ success: false, message: "question is required." });
+    }
+    if (!subject) {
+      return res.status(400).json({ success: false, message: "subject is required." });
+    }
+
+    const result = await askTutor({
+      studentId:     req.user._id,
+      question,
+      subject,
+      topic,
+      noteId,
+      // accept both field names so old frontend still works during transition
+      curriculumType: curriculumType || curriculum || "WAEC",
     });
 
-    return successResponse(
-      res,
-      "Tutor response generated",
-      result
-    );
-
-  } catch (error) {
-    console.error("❌ Tutor Controller Error:", error);
-
-    return errorResponse(
-      res,
-      error.message || "Failed to get tutor response",
-      500
-    );
+    return res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
