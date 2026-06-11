@@ -1,4 +1,4 @@
-import { askTutor } from "../services/tutorService.js";
+import { askTutor } from "../services/tutor.service.js";
 
 // POST /api/tutor/ask
 export const ask = async (req, res) => {
