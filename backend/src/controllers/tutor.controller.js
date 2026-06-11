@@ -1,7 +1,7 @@
 import { askTutor } from "../services/tutor.service.js";
 
 // POST /api/tutor/ask
-export const askTutor = async (req, res) => {
+export const ask = async (req, res) => {
   try {
     const {
       question,
