@@ -1,9 +1,10 @@
 import express from "express";
+import { protect } from "../middleware/auth.middleware.js";
 import { ask } from "../controllers/tutor.controller.js";
-import { protect } from "../middlewares/auth.middleware.js";
 
 const router = express.Router();
 
-router.post("/ask", protect, tutorChat);
+// POST /api/tutor/ask
+router.post("/ask", protect, ask);
 
 export default router;
