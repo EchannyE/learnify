@@ -1,6 +1,6 @@
 import express from "express";
 import { generateQuiz, getQuizzes, submitQuiz } from "../controllers/quiz.controller.js";
-import { protect } from "../utils/apiResponse.js";
+import { protect } from "../middlewares/auth.middleware.js";
 
 const router = express.Router();
 
