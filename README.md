@@ -1,22 +1,10 @@
-# Learnify — AI-Powered Study Campanion and Exam Prep for West African Students
-
-> Built for The Artificial Future Hackathon · YPIT · Lagos, May 30 – June 13, 2026
-
-Learnify is a full-stack web application that acts as an intelligent learning companion for secondary school students preparing for WAEC, NECO, and JAMB examinations. Students scan or upload handwritten notes, generate personalised quizzes, get curriculum-aligned AI tutoring, and receive a 7-day study plan — all powered by Google Gemini and a RAG pipeline grounded in official syllabus content.
+# Learnify
+Overview
+Learnify is an AI-powered learning platform designed to help students prepare for examinations such as WAEC, NECO, JAMB, and GCE. The platform combines OCR-powered note digitization, Retrieval-Augmented Generation (RAG), AI tutoring, quiz generation, personalized study planning, and learning analytics into a single learning experience.
+Built using React, Node.js, Express, MongoDB, Google Gemini AI, and n8n automation workflows, Learnify enables students to transform handwritten or printed notes into interactive learning resources.
 
 **Live app:** https://learnify-lyart.vercel.app
 **GitHub:** https://github.com/EchannyE/learnify.git
-
----
-
-## Team
-
-| Name | Role |
-|---|---|
-| Echanny Emmanuel Idagu | Full-Stack Developer / AI Integration |
-| Omini-Olaonipekun Idris Pelumi | Frontend Developer / UI Design |
-| Peter Akinleye | Mobile Developer |
-| Zakariya Hassan | Generative AI / Prompt Engineering |
 
 ---
 
@@ -88,24 +76,19 @@ npm install
 Create a `.env` file in `backend/`:
 
 ```env
-# ── Core ──────────────────────────────────────────────────
-MONGO_URI=<your-mongodb-atlas-connection-string>
-JWT_SECRET=<your-jwt-secret>
+# MONGO_URI=your_mongodb_connection_string
+
+JWT_SECRET=your_jwt_secret
+
 PORT=5000
 
-# ── Gemini AI ─────────────────────────────────────────────
-GOOGLE_GEMINI_API_KEY=<your-google-gemini-api-key>
+GEMINI_API_KEY=your_gemini_api_key
 
-# ── Server public URL (used to build image URLs for OCR) ──
-BACKEND_URL=http://localhost:5000
-```
+N8N_OCR_WEBHOOK_URL=optional
 
-> **Note:** n8n webhook URLs are no longer required. All AI logic runs directly in Node.js.
+N8N_QUIZ_WEBHOOK_URL=optional
 
-Start the development server:
-
-```bash
-npm run dev
+N8N_STUDY_PLANNER_WEBHOOK_URL=optional
 ```
 
 ### API Endpoints
@@ -226,7 +209,7 @@ At query time (tutor, quiz, study planner), the question is embedded and top-5 c
 
 ---
 
-## n8n Workflows (Optional)
+## n8n Workflows
 
 Workflow definitions are in `n8n-workflows/` and can be imported into a self-hosted or cloud n8n instance for additional automation:
 
@@ -239,7 +222,6 @@ Workflow definitions are in `n8n-workflows/` and can be imported into a self-hos
 | `drive-injection.workflow.json` | Google Drive → PDF → chunk → embed → store |
 | `weekly-report.workflow.json` | Weekly student performance summary (cron) |
 
-> The backend no longer depends on n8n. These workflows are supplementary and were used during early development.
 
 ---
 
