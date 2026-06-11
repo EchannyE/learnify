@@ -1,15 +1,15 @@
 import { askTutor } from "../services/tutor.service.js";
 
 // POST /api/tutor/ask
-export const ask = async (req, res) => {
+export const askTutor = async (req, res) => {
   try {
     const {
       question,
       subject,
       topic,
       noteId,
-      curriculumType,   // frontend must send this
-      curriculum,       // fallback if frontend sends old field name
+      curriculumType,   
+      curriculum,       
     } = req.body;
 
     if (!question?.trim()) {
