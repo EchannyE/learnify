@@ -1,127 +1,259 @@
-# Learnify
+# Learnify — AI-Powered Exam Prep for West African Students
 
-Learnify is a full-stack student learning assistant built with a React/Vite frontend, an Express/MongoDB backend, and optional n8n automation workflows. It includes note ingestion, OCR-based text extraction, quiz generation, AI tutoring, study plan generation, RAG-based context search, and analytics.
+> Built for The Artificial Future Hackathon · YPIT · Lagos, May 30 – June 13, 2026
 
-## Project structure
+Learnify is a full-stack web application that acts as an intelligent learning companion for secondary school students preparing for WAEC, NECO, and JAMB examinations. Students scan or upload handwritten notes, generate personalised quizzes, get curriculum-aligned AI tutoring, and receive a 7-day study plan — all powered by Google Gemini and a RAG pipeline grounded in official syllabus content.
 
-- `backend/` - Express API server, MongoDB models, authentication, notes, quizzes, study plans, tutor, and RAG chunk support.
-- `frontend/` - React app with Vite, Tailwind CSS, React Router, and browser offline support.
-- `mobile/flutter_app/` - mobile client workspace placeholder.
-- `n8n-workflows/` - automation workflows for OCR, quiz generation, RAG retrieval, study planner, and weekly reports.
+**Live app:** https://learnify-lyart.vercel.app
+**GitHub:** https://github.com/EchannyE/learnify.git
 
-## Key features
+---
 
-- User authentication and authorization
-- Note creation and OCR text extraction
-- Quiz generation and performance tracking
-- AI tutor powered by Google Gemini API
-- Study planner generation via n8n webhook integration
-- Retrieval-augmented generation (RAG) chunk storage and search
-- Analytics dashboard for student performance
+## Team
+
+| Name | Role |
+|---|---|
+| Echanny Emmanuel Idagu | Full-Stack Developer / AI Integration |
+| Omini-Olaonipekun Idris Pelumi | Frontend Developer / UI Design |
+| Peter Akinleye | Mobile Developer |
+| Zakariya Hassan | Generative AI / Prompt Engineering |
+
+---
+
+## Project Structure
+
+```
+learnify/
+├── backend/                  # Express API server
+│   └── src/
+│       ├── controllers/      # Route handlers
+│       ├── middleware/        # Auth, error handling
+│       ├── models/            # Mongoose schemas
+│       ├── routes/            # Express routers
+│       └── services/          # Business logic & AI layer
+│           ├── geminiService.js        # Gemini API wrapper
+│           ├── ragService.js           # Embedding + cosine similarity search
+│           ├── ocrService.js           # Gemini Vision OCR
+│           ├── quizService.js          # Quiz generation
+│           ├── studyPlannerService.js  # Study plan generation
+│           ├── tutorService.js         # AI tutor with RAG
+│           └── noteService.js          # Note CRUD + OCR trigger
+├── frontend/                 # React + Vite app
+│   └── src/
+│       ├── api/              # Axios instance
+│       ├── components/       # Shared UI components
+│       ├── hooks/            # Custom React hooks
+│       ├── pages/            # Route-level page components
+│       └── utils/            # Download helpers, offline DB
+├── mobile/flutter_app/       # Mobile client (placeholder)
+└── n8n-workflows/            # Optional automation workflows
+```
+
+---
+
+## Key Features
+
+- **OCR Note Scanner** — upload a photo, file, or paste text; Gemini Vision extracts readable content
+- **AI Tutor** — ask curriculum questions; answers grounded in RAG-retrieved syllabus chunks
+- **Quiz Generator** — auto-generates 10 MCQ or closed-ended questions from your notes + RAG context
+- **Study Planner** — produces a 7-day plan aligned to your exam date and weak topics
+- **RAG Pipeline** — curriculum PDFs embedded with `gemini-embedding-2`, stored in MongoDB, retrieved by cosine similarity
+- **Analytics Dashboard** — tracks scores, weak topics, and study streaks
+- **Offline Support** — IndexedDB caching via IDB for low-connectivity environments
+
+---
 
 ## Backend
 
-### Tech stack
+### Tech Stack
 
-- Node.js (ESM)
-- Express
-- MongoDB / Mongoose
-- dotenv
-- CORS, Helmet, Morgan
-- Nodemon for development
+| Tool | Purpose |
+|---|---|
+| Node.js (ESM) | Runtime |
+| Express | HTTP server |
+| MongoDB + Mongoose | Database |
+| Google Gemini API | Text generation, vision OCR, embeddings |
+| JWT | Authentication |
+| Multer | File uploads |
+| Axios | Outbound HTTP (Gemini API calls) |
+| Helmet + Morgan + CORS | Security and logging |
 
 ### Setup
 
-1. Open a terminal and install backend dependencies:
+```bash
+cd backend
+npm install
+```
 
-   ```powershell
-   cd C:\Users\joe\Desktop\learnify\backend
-   npm install
-   ```
+Create a `.env` file in `backend/`:
 
-2. Create a `.env` file in `backend/` with the following values:
+```env
+# ── Core ──────────────────────────────────────────────────
+MONGO_URI=<your-mongodb-atlas-connection-string>
+JWT_SECRET=<your-jwt-secret>
+PORT=5000
 
-   ```env
-   MONGO_URI=<your-mongodb-connection-string>
-   JWT_SECRET=<your-jwt-secret>
-   PORT=5000
-   GEMINI_API_KEY=<your-google-gemini-api-key>
-   N8N_OCR_WEBHOOK_URL=<optional-n8n-ocr-webhook>
-   N8N_QUIZ_WEBHOOK_URL=<optional-n8n-quiz-webhook>
-   N8N_STUDY_PLANNER_WEBHOOK_URL=<optional-n8n-study-planner-webhook>
-   ```
+# ── Gemini AI ─────────────────────────────────────────────
+GOOGLE_GEMINI_API_KEY=<your-google-gemini-api-key>
 
-3. Start the backend server:
+# ── Server public URL (used to build image URLs for OCR) ──
+BACKEND_URL=http://localhost:5000
+```
 
-   ```powershell
-   npm run dev
-   ```
+> **Note:** n8n webhook URLs are no longer required. All AI logic runs directly in Node.js.
+
+Start the development server:
+
+```bash
+npm run dev
+```
+
+### API Endpoints
+
+#### Auth
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/auth/register` | Register a new student |
+| POST | `/api/auth/login` | Login and receive JWT |
+
+#### Notes
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/notes` | Get all notes for the logged-in student |
+| POST | `/api/notes` | Create note (triggers OCR automatically) |
+| GET | `/api/notes/:id` | Get a single note |
+| POST | `/api/notes/ocr-result` | Receive OCR result callback |
+
+#### Quiz
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/quiz/generate` | Generate a quiz from note + RAG context |
+| GET | `/api/quiz` | Get all quizzes |
+| GET | `/api/quiz/:id` | Get a single quiz |
+| PATCH | `/api/quiz/:id/score` | Submit quiz score |
+
+#### Study Planner
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/study-planner/generate` | Generate a 7-day study plan |
+| GET | `/api/study-planner` | Get all study plans |
+| GET | `/api/study-planner/:id` | Get a single plan |
+| PATCH | `/api/study-planner/:id/task/:index/complete` | Mark a task complete |
+
+#### AI Tutor
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/tutor/ask` | Ask the AI tutor a question |
+
+#### Curriculum (RAG Ingest)
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/curriculum/ingest` | Ingest a curriculum document (chunks + embeds) |
+| GET | `/api/curriculum` | Browse ingested chunks |
+
+---
 
 ## Frontend
 
-### Tech stack
+### Tech Stack
 
-- React
-- Vite
-- Tailwind CSS
-- Axios
-- React Router
-- IDB for offline storage
+| Tool | Purpose |
+|---|---|
+| React 18 | UI framework |
+| Vite | Build tool |
+| Tailwind CSS | Styling |
+| React Router v6 | Routing |
+| Axios | API calls |
+| IDB (IndexedDB) | Offline caching |
+| jsPDF + docx | PDF and Word export |
 
 ### Setup
 
-1. Open a terminal and install frontend dependencies:
-
-   ```powershell
-   cd C:\Users\joe\Desktop\learnify\frontend
-   npm install
-   ```
-
-2. Start the frontend development server:
-
-   ```powershell
-   npm run dev
-   ```
-
-### Optional frontend packages
-
-If you want to add PDF or Word export support, install:
-
-```powershell
-npm install jspdf docx file-saver
+```bash
+cd frontend
+npm install
 ```
 
-## Environment variables
+Create a `.env` file in `frontend/`:
 
-The backend uses the following variables:
+```env
+VITE_API_URL=http://localhost:5000/api
+```
 
-- `MONGO_URI` - MongoDB connection string
-- `JWT_SECRET` - secret for signing JWT tokens
-- `PORT` - backend server port (default: `5000`)
-- `GEMINI_API_KEY` - Google Gemini API key for AI tutor requests
-- `N8N_OCR_WEBHOOK_URL` - optional webhook URL for OCR processing
-- `N8N_QUIZ_WEBHOOK_URL` - optional webhook URL for quiz generation
-- `N8N_STUDY_PLANNER_WEBHOOK_URL` - optional webhook URL for study planner generation
+Start the development server:
 
-## n8n workflows
+```bash
+npm run dev
+```
 
-Workflow definitions are stored in `n8n-workflows/`:
+### Pages
 
-- `drive-injection.workflow.json`
-- `ocr.workflow.json`
-- `quiz-generator.workflow.json`
-- `rag-retrieval.workflow.json`
-- `study-planner.workflow.json`
-- `weekly-report.workflow.json`
+| Route | Page | Description |
+|---|---|---|
+| `/` | Dashboard | Performance overview and recent activity |
+| `/notes` | Notes | Upload, scan, and manage notes |
+| `/quiz` | Quiz | Take and review quizzes |
+| `/tutor` | Tutor | Chat with the AI tutor |
+| `/study-planner` | Study Planner | View and track your 7-day plan |
+| `/login` | Login | Student authentication |
+| `/register` | Register | New student signup |
 
-These workflows can be imported into n8n to support external processing and automation used by the backend.
+---
 
-## Notes
+## RAG Pipeline
 
-- The backend runs in ESM mode via `type: "module"`.
-- The frontend is a Vite-powered React app with Tailwind styles.
-- The `mobile/flutter_app/` directory is available for future mobile client work.
+Curriculum documents are ingested via `POST /api/curriculum/ingest`:
+
+```json
+{
+  "text": "<full syllabus text>",
+  "curriculumType": "WAEC",
+  "subject": "Biology",
+  "topic": "Photosynthesis",
+  "level": "SS"
+}
+```
+
+The service:
+1. Splits the text into 800-character chunks with 120-character overlap (max 20 chunks)
+2. Embeds each chunk using `gemini-embedding-2`
+3. Stores chunks and embeddings in the `CurriculumChunk` MongoDB collection
+
+At query time (tutor, quiz, study planner), the question is embedded and top-5 chunks are retrieved by cosine similarity and injected into the Gemini prompt as primary context.
+
+**File naming convention for batch ingest:**
+`WAEC_Mathematics_Algebra.pdf` → curriculumType=WAEC, subject=Mathematics, topic=Algebra
+
+---
+
+## n8n Workflows (Optional)
+
+Workflow definitions are in `n8n-workflows/` and can be imported into a self-hosted or cloud n8n instance for additional automation:
+
+| File | Pipeline |
+|---|---|
+| `ocr.workflow.json` | OCR (3 modes: URL / upload / paste text) |
+| `quiz-generator.workflow.json` | Quiz generation with RAG injection |
+| `study-planner.workflow.json` | Study plan generation with RAG injection |
+| `rag-retrieval.workflow.json` | RAG query / AI tutor webhook |
+| `drive-injection.workflow.json` | Google Drive → PDF → chunk → embed → store |
+| `weekly-report.workflow.json` | Weekly student performance summary (cron) |
+
+> The backend no longer depends on n8n. These workflows are supplementary and were used during early development.
+
+---
+
+## Deployment
+
+| Service | Platform |
+|---|---|
+| Backend | Render (`https://learnify-xkts.onrender.com`) |
+| Frontend | Vercel (`https://learnify-lyart.vercel.app`) |
+| Database | MongoDB Atlas |
+| AI | Google AI Studio (Gemini API) |
+
+---
 
 ## License
 
-This project does not include a license file. Add one if you want to publish or share it publicly.
+This project was built for a hackathon and is not yet licensed. Add a license file before publishing publicly.
