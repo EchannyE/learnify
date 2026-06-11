@@ -1,106 +1,133 @@
-import Note from "../models/Note.js";
-import ragChunk from "../models/ragChunk.js";
-import axios from "axios";
+import Note     from "../models/Note.js";
+import RagChunk from "../models/ragChunk.js";
+import axios    from "axios";
 
-/* ── generate a Gemini text embedding for a string ────────── */
+const GEMINI_KEY        = () => process.env.GEMINI_API_KEY;
+const EMBED_MODEL       = "gemini-embedding-2";
+const GENERATION_MODEL  = "gemini-2.5-flash";
+
+// ── Cosine similarity ─────────────────────────────────────────────────────────
+const cosine = (a, b) => {
+  if (!a?.length || !b?.length || a.length !== b.length) return 0;
+  let dot = 0, magA = 0, magB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot  += a[i] * b[i];
+    magA += a[i] * a[i];
+    magB += b[i] * b[i];
+  }
+  const denom = Math.sqrt(magA) * Math.sqrt(magB);
+  return denom === 0 ? 0 : dot / denom;
+};
+
+// ── Embed a string using the confirmed working model ──────────────────────────
+// FIX 3 + 4: correct model name, model NOT in body (only in URL)
 const embedText = async (text) => {
   const res = await axios.post(
-    `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${process.env.GEMINI_API_KEY}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${EMBED_MODEL}:embedContent?key=${GEMINI_KEY()}`,
     {
-      model: "models/text-embedding-004",
-      content: { parts: [{ text }] }
+      // FIX 4: no "model" field in body — it belongs in the URL only
+      content: { parts: [{ text: String(text).slice(0, 8000) }] },
     }
   );
   return res.data?.embedding?.values ?? [];
 };
 
-/* ── main tutor function ──────────────────────────────────── */
+// ── Semantic RAG retrieval ────────────────────────────────────────────────────
+// FIX 1: actually embed the question and rank chunks by cosine similarity
+const retrieveChunks = async (question, subject, topic, limit = 5) => {
+  const queryEmbedding = await embedText(
+    `${subject} ${topic || ""} ${question}`
+  );
+
+  // Fetch candidate chunks filtered by subject (+ topic if provided)
+  const filter = {};
+  if (subject) filter.subject = new RegExp(subject, "i");
+  if (topic)   filter.topic   = new RegExp(topic,   "i");
+
+  let chunks = await RagChunk.find(filter).lean();
+
+  // Fallback: if subject filter returns nothing, search all chunks
+  if (!chunks.length) {
+    chunks = await RagChunk.find().lean();
+  }
+
+  if (!chunks.length) return [];
+
+  // Rank by cosine similarity against the question embedding
+  return chunks
+    .map((c) => ({ ...c, score: cosine(queryEmbedding, c.embedding || []) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+};
+
+// ── Main tutor function ───────────────────────────────────────────────────────
 export const askTutor = async ({
   studentId,
   noteId,
   question,
   subject,
-  topic
+  topic,
+  curriculumType = "WAEC",
 }) => {
 
-  // 1. Load note
-  const note = noteId
-    ? await Note.findOne({ _id: noteId, student: studentId })
-    : null;
+  // FIX 2: note is OPTIONAL — tutor works with or without a note
+  let noteContext = "";
+  if (noteId) {
+    const note = await Note.findOne({ _id: noteId, student: studentId });
 
-  if (!note) {
-    throw new Error("Note not found or not accessible");
+    if (note?.status === "processed" && note.extractedText) {
+      noteContext = note.extractedText;
+    } else if (note && note.status !== "processed") {
+      // Note exists but OCR not done — continue without it
+      noteContext = "";
+    }
+    // If note not found — silently continue, don't throw
   }
 
-  if (note.status !== "processed") {
-    throw new Error("Note is still processing. Try again shortly.");
-  }
+  // FIX 1: semantic retrieval using embeddings + cosine similarity
+  const topChunks   = await retrieveChunks(question, subject, topic);
+  const ragContext   = topChunks.length
+    ? topChunks.map((c, i) => `[${i + 1}] ${c.chunkText}`).join("\n\n")
+    : "No curriculum context found.";
 
-  const noteContext = note.extractedText || "";
-
-  // 2. BETTER RAG RETRIEVAL (no regex-only filtering)
-  const chunks = await ragChunk.find({
-    subject: subject
-  });
-
-  // fallback if subject mismatch
-  const filteredChunks = chunks.length
-    ? chunks
-    : await ragChunk.find();
-
-  // take top relevant chunks (simple heuristic improvement)
-  const topChunks = filteredChunks
-    .slice(0, 5)
-    .map((c) => `• ${c.chunkText}`)
-    .join("\n");
-
-  // 3. BUILD STRONG CONTEXT
-  const contextBlock = `
-NOTE CONTENT:
-${noteContext || "No note content available"}
-
-RELEVANT STUDY MATERIAL:
-${topChunks || "No curriculum data found"}
-`;
-
-  // 4. STRONG BUT SAFE PROMPT
+  // ── Build prompt ────────────────────────────────────────────────────────────
   const prompt = `
-You are Learnify AI Tutor.
+You are Learnify AI Tutor — an expert in ${subject} for West African secondary school students.
+Curriculum: ${curriculumType}
+Subject:    ${subject}
+Topic:      ${topic || "General"}
+Question:   ${question}
+
+CURRICULUM CONTEXT (${curriculumType} syllabus — use as primary source):
+${ragContext}
+${noteContext ? `\nSTUDENT'S SCANNED NOTE:\n${noteContext.slice(0, 1500)}` : ""}
 
 INSTRUCTIONS:
-- Use the provided context as primary knowledge
-- If context is incomplete, still give best possible explanation based on it
-- Be clear, educational, and step-by-step
-
-SUBJECT: ${subject}
-TOPIC: ${topic || "General"}
-QUESTION: ${question}
-
-CONTEXT:
-${contextBlock}
+- Use the Curriculum Context as your primary source.
+- If context is insufficient, provide the best explanation possible.
+- Be clear, student-friendly, and step-by-step.
 
 RESPONSE FORMAT:
-1. Simple explanation
-2. Step-by-step breakdown
+1. Simple Explanation
+2. Step-by-Step Breakdown
 3. Example
-4. Practice question
-`;
+4. Practice Question
+`.trim();
 
-  // 5. GEMINI CALL
+  // ── Gemini generation call ──────────────────────────────────────────────────
   const response = await axios.post(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-    {
-      contents: [{ parts: [{ text: prompt }] }]
-    }
+    `https://generativelanguage.googleapis.com/v1beta/models/${GENERATION_MODEL}:generateContent?key=${GEMINI_KEY()}`,
+    { contents: [{ parts: [{ text: prompt }] }] }
   );
 
   const answer =
-    response.data.candidates?.[0]?.content?.parts?.[0]?.text ||
+    response.data?.candidates?.[0]?.content?.parts?.[0]?.text ||
     "No answer generated.";
 
   return {
     answer,
-    ragChunksFound: filteredChunks.length,
-    usedChunks: topChunks.length > 0
+    ragChunksFound: topChunks.length,
+    ragInjected:    topChunks.length > 0,
+    usedNote:       !!noteContext,
   };
 };
